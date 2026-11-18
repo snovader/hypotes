@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directories:
+      - "/.github/actions/*"
+      - "/.github/workflows"
+    schedule:
+      interval: "daily"
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    groups:
+      # oxlint requires a version of oxlint-tsgolint, and oxfmt and oxc-parser
+      # are released with it
+      "oxc":
+        patterns:
+          - "oxc-parser"
+          - "oxfmt"
+          - "oxlint"
+          - "oxlint-tsgolint"
+      # @vitest/expect requires its own version of @vitest/spy and
+      # @vitest/utils, which the runner imports too
+      "vitest":
+        patterns:
+          - "@vitest/*"
