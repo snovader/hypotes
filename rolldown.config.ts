@@ -29,5 +29,11 @@ export default defineConfig({
     },
     platform: 'node',
     external: isExternal,
-    output: { dir: join(import.meta.dirname, 'dist'), format: 'esm' }
+    output: {
+        dir: join(import.meta.dirname, 'dist'),
+        format: 'esm',
+        // Empties it first, as `rm -rf dist` would, which Yarn's shell runs
+        // from the system, and Windows doesn't have
+        cleanDir: true
+    }
 });

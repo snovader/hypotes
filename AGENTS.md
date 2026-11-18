@@ -187,6 +187,13 @@ intent, not a requirement to preserve every detail.
   one of them has it. `engines` starts at 24.13.1, where
   `module.registerHooks`, which `hypotes/register` builds on, became a
   release candidate.
+- The package runs on Linux, macOS, and Windows, where CI tests it. Build
+  paths with `node:path` and `node:url`, and keep in mind that a Windows
+  path, such as `C:\a.ts`, parses as a URL. Yarn runs the scripts in
+  `package.json` in its own shell, the same on each, but runs commands such
+  as `rm` from the system, which Windows doesn't have, so do such steps in
+  Node or in a tool's configuration, as `rolldown.config.ts` empties
+  `dist/`.
 - Node runs the TypeScript source as it is, by stripping its types, so use
   only erasable syntax, and import relative modules with their `.ts`
   extensions.
@@ -220,7 +227,8 @@ intent, not a requirement to preserve every detail.
   which builds the package and runs the tests on the bundle, with the
   bundle's `hypotes/register`.
   `.github/workflows/ci.yml` runs the same checks in CI, and the tests on each
-  supported version of Node.
+  supported version of Node on Ubuntu, and on the oldest and the latest on
+  macOS and Windows.
 
 ### Releasing
 
