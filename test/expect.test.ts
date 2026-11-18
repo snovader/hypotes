@@ -62,7 +62,7 @@ describe('expect', () => {
     });
 
     it("should check Vitest's spies", () => {
-        const spy = vi.fn();
+        const spy = vi.fn<(value: string) => void>();
         spy('a');
 
         expect(spy).toHaveBeenCalledExactlyOnceWith('a');
