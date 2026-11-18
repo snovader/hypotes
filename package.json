@@ -72,7 +72,7 @@
     "format:write": "oxfmt",
     "lint:check": "oxlint",
     "lint:write": "oxlint --fix",
-    "prepack": "yarn build",
+    "prepack": "node scripts/requireYarn.ts && yarn build",
     "test": "node --import hypotes/register --test 'test/**/*.test.ts' 'lint/*.test.ts'",
     "test:dist": "yarn build && NODE_OPTIONS=--conditions=hypotes-dist yarn test",
     "test:watch": "node --import hypotes/register --test --watch 'test/**/*.test.ts' 'lint/*.test.ts'",

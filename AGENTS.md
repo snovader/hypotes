@@ -229,3 +229,18 @@ intent, not a requirement to preserve every detail.
   `.github/workflows/ci.yml` runs the same checks in CI, and the tests on each
   supported version of Node on Ubuntu, and on the oldest and the latest on
   macOS and Windows.
+
+### Releasing
+
+- A release on GitHub publishes the package. Set `version` in
+  `package.json` in a pull request, then publish a release whose tag names
+  it, as `v1.2.3`. `.github/workflows/release.yml` checks that the tag
+  names the version, runs `ci.yml` on the tag, and publishes with
+  `yarn npm publish`, through npm's trusted publishing, with provenance. A
+  release marked as a pre-release goes under npm's `next` tag, and others
+  under `latest`. The repository's rules keep `v*` tags from being moved or
+  deleted, so a release that went wrong takes a new version.
+- Pack and publish only with Yarn, which replaces the exports with those of
+  `publishConfig`. npm keeps the source's, which the package leaves out, so
+  `prepack` fails under any other package manager, in
+  `scripts/requireYarn.ts`.
