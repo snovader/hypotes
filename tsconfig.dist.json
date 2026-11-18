@@ -1,0 +1,14 @@
+{
+    // The declarations of the published modules, which rolldown bundles, and
+    // which the exports of package.json's publishConfig name
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "declaration": true,
+        "emitDeclarationOnly": true,
+        "noEmit": false,
+        "outDir": "dist",
+        "rewriteRelativeImportExtensions": true,
+        "rootDir": "source"
+    },
+    "include": ["source"]
+}

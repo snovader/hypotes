@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+# Read-only, unless a job asks for more
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout GitHub repo
+        uses: actions/checkout@v7
+
+      - name: Prepare dependencies
+        uses: ./.github/actions/prepare-node-dependencies
+
+      - name: Run format check
+        run: yarn format:check
+
+      - name: Run lint check
+        run: yarn lint:check
+
+      - name: Run type check
+        run: yarn typecheck
+
+  test:
+    name: Test (Node ${{ matrix.node_version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest version that `engines` names, then the latest of each
+        # supported line
+        node_version: ["24.13.1", "24.x", "26.x"]
+    steps:
+      - name: Checkout GitHub repo
+        uses: actions/checkout@v7
+
+      - name: Prepare dependencies
+        uses: ./.github/actions/prepare-node-dependencies
+        with:
+          node-version: ${{ matrix.node_version }}
+
+      - name: Run tests
+        run: yarn test
+
+      # Builds the package, and runs the same tests on the bundle that's
+      # published
+      - name: Run tests on the bundle
+        run: yarn test:dist
+
+  # The check for the main branch's ruleset to require. It passes when every
+  # job passed.
+  checks:
+    name: Checks
+    needs: [verify, test]
+    # Runs after a failure too, since GitHub counts a skipped required check as
+    # passed
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if a job failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
