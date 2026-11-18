@@ -3,7 +3,7 @@
 import { expect, it, vi } from 'hypotes';
 
 it("a spy's matcher fails", () => {
-    const spy = vi.fn((value: number) => value * 2);
+    const spy = vi.fn<(value: number) => number>(value => value * 2);
     spy(2);
 
     expect(spy).toHaveReturnedWith(5);

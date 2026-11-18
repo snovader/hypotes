@@ -147,9 +147,22 @@ export default defineConfig({
         'hypotes/expect-expect': 'error',
         'hypotes/no-standalone-expect': 'error',
         'hypotes/valid-expect': 'error',
+        'hypotes/valid-expect-in-promise': 'error',
+        'hypotes/require-to-throw-message': 'error',
         // `toBe` compares with Object.is, which tells -0 from 0
         'hypotes/prefer-to-be': 'error',
         'hypotes/prefer-to-have-length': 'error',
+        // Every test runs, declared unconditionally, with a valid title, and
+        // describe blocks declare them in functions written in place
+        'hypotes/no-focused-tests': 'error',
+        'hypotes/no-disabled-tests': 'error',
+        'hypotes/warn-todo': 'error',
+        'hypotes/no-conditional-tests': 'error',
+        'hypotes/valid-title': 'error',
+        'hypotes/valid-describe-callback': 'error',
+        // Mocks are typed, and hoisted from where they're written
+        'hypotes/require-mock-type-parameters': 'error',
+        'hypotes/hoisted-apis-on-top': 'error',
 
         // Turned off
 
@@ -223,6 +236,25 @@ export default defineConfig({
             rules: {
                 'typescript/strict-void-return': 'off',
                 'unicorn/no-new-array': 'off'
+            }
+        },
+        {
+            // Fixtures declare tests that are focused, skipped and to do, whose
+            // results the tests check
+            files: ['test/fixtures/**'],
+            rules: {
+                'hypotes/no-focused-tests': 'off',
+                'hypotes/no-disabled-tests': 'off',
+                'hypotes/warn-todo': 'off'
+            }
+        },
+        {
+            // Fixtures that call vi.mock() and vi.hoisted() where
+            // hypotes/register rejects them, at the positions that the tests
+            // check
+            files: ['test/fixtures/declares.ts', 'test/fixtures/nested.ts'],
+            rules: {
+                'hypotes/hoisted-apis-on-top': 'off'
             }
         },
         {

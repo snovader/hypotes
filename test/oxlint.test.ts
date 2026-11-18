@@ -1,10 +1,10 @@
 import plugin from 'hypotes/oxlint';
 import { tester } from './ruleTester.ts';
 
-// What the rules recognize: tests, describe blocks and expect() from
+// What the rules recognize: tests, describe blocks, expect() and vi from
 // hypotes, and tests with `prop` from its fast-check subpath
 const IMPORTS = [
-    "import { describe, expect, suite } from 'hypotes';",
+    "import { describe, expect, suite, vi } from 'hypotes';",
     "import { it, test } from 'hypotes/fast-check';"
 ].join('\n');
 
@@ -318,6 +318,613 @@ tester.run('prefer-to-have-length', plugin.rules['prefer-to-have-length'], {
             code: imported('expect(values.length).not.toStrictEqual(0);'),
             output: imported('expect(values).not.toHaveLength(0);'),
             errors: [{ message: 'Use toHaveLength() rather than comparing values.length' }]
+        }
+    ]
+});
+
+const FOCUSED = 'Expected every test to run, rather than those that .only marks';
+
+tester.run('no-focused-tests', plugin.rules['no-focused-tests'], {
+    valid: [
+        imported("it('runs', () => { expect(1).toBe(1); });"),
+        imported("describe.skip('a block', () => {});"),
+        imported("it('runs', { only: false }, () => {});"),
+        // An `it` that isn't hypotes'
+        "declare const it: { only(name: string): void };\nit.only('runs');"
+    ],
+    invalid: [
+        {
+            name: 'a test',
+            code: imported("it.only('runs alone', () => {});"),
+            errors: [
+                {
+                    message: FOCUSED,
+                    suggestions: [
+                        { desc: 'Remove .only', output: imported("it('runs alone', () => {});") }
+                    ]
+                }
+            ]
+        },
+        {
+            name: 'a describe block of each row',
+            code: imported("describe.only.each([1])('a block for %i', value => {});"),
+            errors: [
+                {
+                    message: FOCUSED,
+                    suggestions: [
+                        {
+                            desc: 'Remove .only',
+                            output: imported("describe.each([1])('a block for %i', value => {});")
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            name: 'a test that runs on a condition',
+            code: imported("test.runIf(enabled).only('runs alone', () => {});"),
+            errors: [
+                {
+                    message: FOCUSED,
+                    suggestions: [
+                        {
+                            desc: 'Remove .only',
+                            output: imported("test.runIf(enabled)('runs alone', () => {});")
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            name: 'the only option',
+            code: imported("it('runs alone', { only: true }, () => {});"),
+            errors: [
+                {
+                    message:
+                        'Expected every test to run, rather than those that the only option marks'
+                }
+            ]
+        },
+        {
+            name: "a test of node:test's",
+            code: "import { it } from 'node:test';\nit.only('runs alone', () => {});",
+            errors: [{ message: FOCUSED }]
+        }
+    ]
+});
+
+tester.run('no-disabled-tests', plugin.rules['no-disabled-tests'], {
+    valid: [
+        imported("it('runs', () => { expect(1).toBe(1); });"),
+        imported("it.todo('is to be written');"),
+        imported("it('is to be written', { todo: true });"),
+        imported("it.skipIf(skipped)('runs on a condition', () => {});"),
+        imported("test('runs', { skip: false }, () => {});"),
+        imported("it('runs a function declared elsewhere', check);"),
+        // valid-describe-callback reports a describe block without a function
+        imported("describe('a block');")
+    ],
+    invalid: [
+        {
+            name: 'a test',
+            code: imported("it.skip('is skipped', () => {});"),
+            errors: [{ message: 'Expected the test to run, rather than be skipped with .skip' }]
+        },
+        {
+            name: 'a describe block of each row',
+            code: imported("describe.skip.each([1])('a block for %i', value => {});"),
+            errors: [
+                {
+                    message: 'Expected the describe block to run, rather than be skipped with .skip'
+                }
+            ]
+        },
+        {
+            name: 'a suite',
+            code: imported("suite.skip('a suite', () => {});"),
+            errors: [
+                {
+                    message: 'Expected the describe block to run, rather than be skipped with .skip'
+                }
+            ]
+        },
+        {
+            name: 'the skip option, with a reason',
+            code: imported("test('is skipped', { skip: 'a reason' }, () => {});"),
+            errors: [
+                { message: 'Expected the test to run, rather than be skipped with the skip option' }
+            ]
+        },
+        {
+            name: 'a test without a function',
+            code: imported("it('has no function');"),
+            errors: [{ message: "Expected the test to have a function, without which it's to do" }]
+        },
+        {
+            name: 'a test with options but without a function',
+            code: imported("it('has no function', { timeout: 10 });"),
+            errors: [{ message: "Expected the test to have a function, without which it's to do" }]
+        }
+    ]
+});
+
+tester.run('warn-todo', plugin.rules['warn-todo'], {
+    valid: [
+        imported("it('runs', () => { expect(1).toBe(1); });"),
+        imported("it('is to be written', { todo: false }, () => {});"),
+        // no-disabled-tests reports a test without a function
+        imported("it('has no function');")
+    ],
+    invalid: [
+        {
+            name: 'a test',
+            code: imported("it.todo('is to be written');"),
+            errors: [
+                {
+                    message:
+                        'Expected the test to be written, rather than marked as to do with .todo'
+                }
+            ]
+        },
+        {
+            name: 'a describe block',
+            code: imported("describe.todo('a block');"),
+            errors: [
+                {
+                    message:
+                        'Expected the describe block to be written, rather than marked as to do with .todo'
+                }
+            ]
+        },
+        {
+            name: 'the todo option, with a reason',
+            code: imported("test('is to be written', { todo: 'a reason' }, () => {});"),
+            errors: [
+                {
+                    message:
+                        'Expected the test to be written, rather than marked as to do with the todo option'
+                }
+            ]
+        }
+    ]
+});
+
+const NO_TEXT = 'Expected a title that has text';
+const SPACES = 'Expected a title without spaces at its start or end';
+
+tester.run('valid-title', plugin.rules['valid-title'], {
+    valid: [
+        imported("it('works', () => {});"),
+        imported('describe(`a block`, () => {});'),
+        imported('it(`works with ${value}`, () => {});'),
+        imported('it(title, () => {});'),
+        imported("it('item works', () => {});"),
+        imported("test('tests it', () => {});"),
+        imported("it.each([1])('works with %i', value => {});"),
+        // Titles of calls other than declarations
+        "declare function it(name: string): void;\nit('');"
+    ],
+    invalid: [
+        {
+            name: 'an empty string',
+            code: imported("it('', () => {});"),
+            errors: [{ message: NO_TEXT }]
+        },
+        {
+            name: 'an empty template',
+            code: imported('describe(``, () => {});'),
+            errors: [{ message: NO_TEXT }]
+        },
+        {
+            name: 'spaces at the start',
+            code: imported("it('  works', () => {});"),
+            output: imported("it('works', () => {});"),
+            errors: [{ message: SPACES }]
+        },
+        {
+            name: 'a space at the end of a template',
+            code: imported('test(`works `, () => {});'),
+            output: imported('test(`works`, () => {});'),
+            errors: [{ message: SPACES }]
+        },
+        {
+            name: 'an escaped tab, which the source can only remove by hand',
+            code: imported("it('works\\t', () => {});"),
+            output: null,
+            errors: [{ message: SPACES }]
+        },
+        {
+            name: 'the name of a test',
+            code: imported("it('it works', () => {});"),
+            output: imported("it('works', () => {});"),
+            errors: [{ message: 'Expected the title not to start with it, which declares it' }]
+        },
+        {
+            name: 'the name of a describe block',
+            code: imported("describe('describe a block', () => {});"),
+            output: imported("describe('a block', () => {});"),
+            errors: [
+                { message: 'Expected the title not to start with describe, which declares it' }
+            ]
+        },
+        {
+            name: 'the name of a suite, in a template',
+            code: imported('suite(`suite of tests`, () => {});'),
+            output: imported('suite(`of tests`, () => {});'),
+            errors: [{ message: 'Expected the title not to start with suite, which declares it' }]
+        },
+        {
+            name: 'the name of a test for each row',
+            code: imported("test.each([1])('test %i', value => {});"),
+            output: imported("test.each([1])('%i', value => {});"),
+            errors: [{ message: 'Expected the title not to start with test, which declares it' }]
+        },
+        {
+            name: 'the name alone',
+            code: imported("it('it', () => {});"),
+            output: null,
+            errors: [{ message: 'Expected the title not to start with it, which declares it' }]
+        },
+        {
+            name: 'the name that a test is imported under',
+            code: "import { it as check } from 'hypotes';\ncheck('it works', () => {});",
+            output: "import { it as check } from 'hypotes';\ncheck('works', () => {});",
+            errors: [{ message: 'Expected the title not to start with it, which declares it' }]
+        }
+    ]
+});
+
+const NO_FUNCTION = 'Expected a title and a function for the describe block';
+const PARAMETERS = "Expected the describe block's function to take no parameters";
+const RETURNS = "Expected the describe block's function to return nothing";
+
+tester.run('valid-describe-callback', plugin.rules['valid-describe-callback'], {
+    valid: [
+        imported("describe('a block', () => {});"),
+        imported("describe('a block', async () => { await setUp(); });"),
+        imported("describe('a block', function () {});"),
+        imported("describe('a block', { timeout: 10 }, () => {});"),
+        imported("describe('a block', () => {}, 10);"),
+        imported("describe.each([1])('a block for %i', value => {});"),
+        imported("describe.for([[1]])('a block for %i', ([value]) => {});"),
+        imported("describe.todo('a block');"),
+        imported("describe('a block', { todo: true });"),
+        imported("describe('a block', () => { it('returns', () => { return promise; }); });"),
+        // Tests take their contexts
+        imported("it('a test', context => {});")
+    ],
+    invalid: [
+        {
+            name: 'no function',
+            code: imported("describe('a block');"),
+            errors: [{ message: NO_FUNCTION }]
+        },
+        {
+            name: 'options without a function',
+            code: imported("describe('a block', { skip: true });"),
+            errors: [{ message: NO_FUNCTION }]
+        },
+        {
+            name: 'a function declared elsewhere',
+            code: imported("describe('a block', declareTests);"),
+            errors: [{ message: "Expected the describe block's function to be written in place" }]
+        },
+        {
+            name: 'a parameter',
+            code: imported("describe('a block', context => {});"),
+            errors: [{ message: PARAMETERS }]
+        },
+        {
+            name: 'a parameter, after options',
+            code: imported("suite('a suite', { timeout: 10 }, function (done) {});"),
+            errors: [{ message: PARAMETERS }]
+        },
+        {
+            name: 'a return statement',
+            code: imported("describe('a block', () => { return setUp(); });"),
+            errors: [{ message: RETURNS }]
+        },
+        {
+            name: 'an arrow function that returns a call',
+            code: imported("describe('a block', () => it('works', () => {}));"),
+            errors: [{ message: RETURNS }]
+        }
+    ]
+});
+
+const CONDITIONAL_TEST =
+    'Expected the test to be declared unconditionally, rather than in an if statement: skipIf() and runIf() skip it on a condition';
+
+tester.run('no-conditional-tests', plugin.rules['no-conditional-tests'], {
+    valid: [
+        imported("it('asserts on a condition', () => { if (enabled) { expect(1).toBe(1); } });"),
+        imported("it.skipIf(skipped)('runs on a condition', () => {});"),
+        imported("describe('a block', () => { if (enabled) { setUp(); } it('runs', () => {}); });"),
+        imported('if (enabled) { setUp(); }')
+    ],
+    invalid: [
+        {
+            name: 'a test',
+            code: imported("if (enabled) { it('runs', () => {}); }"),
+            errors: [{ message: CONDITIONAL_TEST }]
+        },
+        {
+            name: 'a test for each row, in an else block',
+            code: imported("if (enabled) {} else { test.each([1])('runs %i', value => {}); }"),
+            errors: [{ message: CONDITIONAL_TEST }]
+        },
+        {
+            name: 'a describe block in a describe block',
+            code: imported(
+                "describe('a block', () => { if (enabled) { describe('another', () => {}); } });"
+            ),
+            errors: [
+                {
+                    message:
+                        'Expected the describe block to be declared unconditionally, rather than in an if statement: skipIf() and runIf() skip it on a condition'
+                }
+            ]
+        },
+        {
+            name: 'a test that a function declares',
+            code: imported("function declare(): void { if (enabled) { it('runs', () => {}); } }"),
+            errors: [{ message: CONDITIONAL_TEST }]
+        }
+    ]
+});
+
+const UNAWAITED = 'Expected the promise whose callback calls expect() to be awaited or returned';
+
+tester.run('valid-expect-in-promise', plugin.rules['valid-expect-in-promise'], {
+    valid: [
+        imported(
+            "it('awaits', async () => { await promise.then(value => { expect(value).toBe(1); }); });"
+        ),
+        imported(
+            "it('returns', () => { return promise.then(value => { expect(value).toBe(1); }); });"
+        ),
+        imported("it('returns', () => promise.then(value => { expect(value).toBe(1); }));"),
+        imported(
+            "it('returns the chain', () => { return promise.then(value => { expect(value).toBe(1); }).finally(cleanUp); });"
+        ),
+        imported(
+            "it('awaits a variable', async () => { const checked = promise.then(value => { expect(value).toBe(1); }); await checked; });"
+        ),
+        imported(
+            "it('returns a variable', () => { const checked = promise.catch(error => { expect(error).toBeDefined(); }); return checked; });"
+        ),
+        imported(
+            "it('awaits an assignment', async () => { let checked; checked = promise.then(value => { expect(value).toBe(1); }); await checked; });"
+        ),
+        imported(
+            "it('awaits all', async () => { const first = a.then(value => { expect(value).toBe(1); }); const second = b.then(value => { expect(value).toBe(2); }); await Promise.all([first, second]); });"
+        ),
+        imported(
+            "it('expects it to resolve', async () => { const checked = promise.then(value => { expect(value).toBe(1); }); await expect(checked).resolves.toBeUndefined(); });"
+        ),
+        imported(
+            "it('returns the inner promise', () => { return outer.then(() => inner.then(value => { expect(value).toBe(1); })); });"
+        ),
+        imported(
+            "it('asserts after the promise', () => { promise.then(cleanUp); expect(1).toBe(1); });"
+        ),
+        imported(
+            'function check(promise: Promise<number>): Promise<void> { return promise.then(value => { expect(value).toBe(1); }); }'
+        )
+    ],
+    invalid: [
+        {
+            name: 'a promise that is neither awaited nor returned',
+            code: imported(
+                "it('loses it', () => { promise.then(value => { expect(value).toBe(1); }); });"
+            ),
+            errors: [{ message: UNAWAITED }]
+        },
+        {
+            name: 'a chain that asserts twice',
+            code: imported(
+                "it('loses it', async () => { promise.then(value => { expect(value).toBe(1); }).catch(error => { expect(error).toBeDefined(); }); });"
+            ),
+            errors: [{ message: UNAWAITED }]
+        },
+        {
+            name: 'a callback for rejection',
+            code: imported(
+                "it('loses it', () => { promise.then(undefined, error => { expect(error).toBeDefined(); }); });"
+            ),
+            errors: [{ message: UNAWAITED }]
+        },
+        {
+            name: 'a variable that is neither awaited nor returned',
+            code: imported(
+                "it('loses it', () => { const checked = promise.then(value => { expect(value).toBe(1); }); expect(1).toBe(1); });"
+            ),
+            errors: [{ message: UNAWAITED }]
+        },
+        {
+            name: 'a variable in Promise.all(), which is neither awaited nor returned',
+            code: imported(
+                "it('loses it', () => { const checked = promise.then(value => { expect(value).toBe(1); }); Promise.all([checked]); });"
+            ),
+            errors: [{ message: UNAWAITED }]
+        },
+        {
+            name: 'an inner promise that the outer one does not return',
+            code: imported(
+                "it('loses it', () => { return outer.then(() => { inner.then(value => { expect(value).toBe(1); }); }); });"
+            ),
+            errors: [{ message: UNAWAITED }]
+        },
+        {
+            name: 'a promise in a function of its own',
+            code: imported(
+                'function check(promise: Promise<number>): void { promise.then(value => { expect(value).toBe(1); }); }'
+            ),
+            errors: [{ message: UNAWAITED }]
+        }
+    ]
+});
+
+tester.run('require-to-throw-message', plugin.rules['require-to-throw-message'], {
+    valid: [
+        imported("expect(run).toThrow('a message');"),
+        imported('expect(run).toThrowError(/a message/u);'),
+        imported('expect(run).toThrow(TypeError);'),
+        imported('expect(run).not.toThrow();'),
+        imported('await expect(promise).resolves.not.toThrow();')
+    ],
+    invalid: [
+        {
+            name: 'toThrow()',
+            code: imported('expect(run).toThrow();'),
+            errors: [
+                {
+                    message:
+                        'Expected toThrow() to be given what the error should be, such as its message'
+                }
+            ]
+        },
+        {
+            name: 'toThrowError() of a rejection',
+            code: imported('await expect(promise).rejects.toThrowError();'),
+            errors: [
+                {
+                    message:
+                        'Expected toThrowError() to be given what the error should be, such as its message'
+                }
+            ]
+        }
+    ]
+});
+
+const UNTYPED_MOCK =
+    'Expected vi.fn() to be given the type of the function that it mocks, as in vi.fn<() => void>()';
+
+tester.run('require-mock-type-parameters', plugin.rules['require-mock-type-parameters'], {
+    valid: [
+        imported('const read = vi.fn<() => string>();'),
+        imported('const double = vi.fn<(value: number) => number>(value => value * 2);'),
+        imported("vi.spyOn(console, 'log');"),
+        { code: imported('const read = vi.fn();'), filename: 'test.js' },
+        // A `vi` that isn't hypotes'
+        'declare const vi: { fn(): void };\nvi.fn();'
+    ],
+    invalid: [
+        {
+            name: 'a mock',
+            code: imported('const read = vi.fn();'),
+            errors: [{ message: UNTYPED_MOCK }]
+        },
+        {
+            name: 'a mock of an implementation, in a chain',
+            code: imported('const read = vi.fn(() => 1).mockReturnValue(2);'),
+            errors: [{ message: UNTYPED_MOCK }]
+        },
+        {
+            name: 'a module of TypeScript',
+            code: imported('const read = vi.fn();'),
+            filename: 'test.mts',
+            errors: [{ message: UNTYPED_MOCK }]
+        }
+    ]
+});
+
+const MOVE = "Move it to the module's top level, after its imports";
+
+/** The message of a call of `vi.${method}()` that isn't hoisted from where it is */
+function notHoisted(method: string): string {
+    return `Expected vi.${method}() in a statement of its own at the module's top level: it's hoisted above the module's code`;
+}
+
+tester.run('hoisted-apis-on-top', plugin.rules['hoisted-apis-on-top'], {
+    valid: [
+        imported("vi.mock('./module.ts');"),
+        imported("vi.unmock('./module.ts');"),
+        imported('const mocks = vi.hoisted(() => ({ read: vi.fn<() => string>() }));'),
+        imported('const mocks = await vi.hoisted(async () => ({}));'),
+        imported('await vi.hoisted(async () => {});'),
+        imported("it('mocks', () => { vi.doMock('./module.ts'); });"),
+        // A `vi` that isn't hypotes'
+        "declare const vi: { mock(path: string): void };\nif (mocking) { vi.mock('./module.ts'); }"
+    ],
+    invalid: [
+        {
+            name: 'a mock in an if statement',
+            code: imported("if (mocking) { vi.mock('./module.ts'); }"),
+            errors: [
+                {
+                    message: notHoisted('mock'),
+                    suggestions: [
+                        {
+                            desc: MOVE,
+                            output: imported("vi.mock('./module.ts');\nif (mocking) {  }")
+                        },
+                        {
+                            desc: "Call vi.doMock(), which runs where it's called",
+                            output: imported("if (mocking) { vi.doMock('./module.ts'); }")
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            name: 'an unmock in a test',
+            code: imported("it('mocks', () => { vi.unmock('./module.ts'); });"),
+            errors: [
+                {
+                    message: notHoisted('unmock'),
+                    suggestions: [
+                        {
+                            desc: MOVE,
+                            output: imported("vi.unmock('./module.ts');\nit('mocks', () => {  });")
+                        },
+                        {
+                            desc: "Call vi.doUnmock(), which runs where it's called",
+                            output: imported("it('mocks', () => { vi.doUnmock('./module.ts'); });")
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            name: 'a hoisted factory in a describe block, above the imports',
+            code: "describe('a block', () => { vi.hoisted(() => {}); });\nimport { describe, vi } from 'hypotes';",
+            errors: [
+                {
+                    message: notHoisted('hoisted'),
+                    suggestions: [
+                        {
+                            desc: MOVE,
+                            output: "describe('a block', () => {  });\nimport { describe, vi } from 'hypotes';\nvi.hoisted(() => {});"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            name: 'a mock that is awaited',
+            code: imported("await vi.mock('./module.ts');"),
+            errors: [
+                {
+                    message: notHoisted('mock'),
+                    suggestions: [
+                        {
+                            desc: "Call vi.doMock(), which runs where it's called",
+                            output: imported("await vi.doMock('./module.ts');")
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            name: 'a hoisted factory that is exported',
+            code: imported('export const mocks = vi.hoisted(() => ({}));'),
+            errors: [{ message: notHoisted('hoisted') }]
+        },
+        {
+            name: 'a hoisted factory that declares another variable too',
+            code: imported('const first = 1, mocks = vi.hoisted(() => ({}));'),
+            errors: [{ message: notHoisted('hoisted') }]
         }
     ]
 });

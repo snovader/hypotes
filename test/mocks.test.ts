@@ -8,7 +8,7 @@ import { quadruple } from './fixtures/uses.ts';
 import { missing } from './fixtures/usesPackage.ts';
 import original, * as values from './fixtures/values.ts';
 
-const spies = vi.hoisted(() => ({ double: vi.fn((value: number) => value * 3) }));
+const spies = vi.hoisted(() => ({ double: vi.fn<(value: number) => number>(value => value * 3) }));
 const { label } = await vi.hoisted(async () => ({ label: await Promise.resolve('mocked') }));
 
 vi.mock('./fixtures/values.ts', () => ({ default: label, double: spies.double, one: 2 }));
