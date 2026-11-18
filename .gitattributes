@@ -1,0 +1,7 @@
+* text=auto eol=lf
+# Which tests a module whose lines end in CRLF
+/test/fixtures/crlf.ts eol=crlf
+
+/.yarn/**            linguist-vendored
+/.yarn/releases/*    binary
+/.yarn/plugins/**/*  binary
