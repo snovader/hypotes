@@ -13,9 +13,11 @@
 // them as the mocked module loads. A factory's error surfaces where its
 // module is imported, as Vitest's does.
 //
-// A mock can stand in for a file that isn't there, as Vitest's can, but not
-// for a package that isn't installed, which `import.meta.resolve` gives no
-// URL for.
+// A mock can stand in for a file that isn't there, by the URL that
+// `import.meta.resolve` gives the file, where Vitest 5.1 fails to import
+// it, with "Cannot find module". But it can't stand in for a package that
+// isn't installed, as Vitest's can: `import.meta.resolve` gives the package
+// no URL, so the call that mocks it throws ERR_MODULE_NOT_FOUND.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type {
     LoadFnOutput,
