@@ -94,6 +94,26 @@ export default defineConfig({
         'import/no-empty-named-blocks': 'error',
         'import/no-mutable-exports': 'error',
         'unicorn/prefer-node-protocol': 'error',
+        // A module in a parent directory is imported by a private path of
+        // package.json's `imports`, such as `#source/title`, rather than by
+        // `../`
+        'import/no-relative-parent-imports': 'error',
+        // An entry point is imported by the name that package.json's
+        // `exports` give it, such as `hypotes/fast-check`, which names the
+        // bundle when the tests run on it, and which `vi` has to come from
+        // to be hoisted
+        'eslint/no-restricted-imports': [
+            'error',
+            {
+                patterns: [
+                    {
+                        regex: '^#source/(index|fastCheck|register|oxlint/index)$',
+                        message:
+                            'Import an entry point by the name that the package exports it under.'
+                    }
+                ]
+            }
+        ],
         // Named imports list functions and values whose names start in lower
         // case, then classes and constants, then types, each in natural order:
         // `SIZEOF_8` before `SIZEOF_16`

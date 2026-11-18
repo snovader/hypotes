@@ -10,7 +10,7 @@ import {
 } from '@vitest/expect';
 import { describe, expect, it } from 'hypotes';
 import { fc, it as property } from 'hypotes/fast-check';
-import { fastEquality } from '../source/equals.ts';
+import { fastEquality } from '#source/equals';
 
 const TO_EQUAL: Tester[] = [fastEquality, iterableEquality];
 const TO_STRICT_EQUAL: Tester[] = [

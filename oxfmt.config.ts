@@ -22,13 +22,14 @@ export default defineConfig({
     bracketSpacing: true,
     bracketSameLine: false,
     objectWrap: 'preserve',
-    // Node's modules, other packages, this package, then relative paths,
-    // nearest last
+    // Node's modules, other packages, this package by the names that it
+    // exports, then by its private paths, then relative paths, nearest last
     sortImports: {
         groups: [
             'builtin',
             'external',
-            ['internal', 'subpath'],
+            'internal',
+            'subpath',
             'parent',
             ['sibling', 'index'],
             'unknown'
