@@ -46,6 +46,10 @@
       "default": "./source/register.ts"
     }
   },
+  "imports": {
+    "#source/*": "./source/*.ts",
+    "#test/*": "./test/*.ts"
+  },
   "publishConfig": {
     "exports": {
       ".": {
@@ -63,6 +67,11 @@
       "./register": {
         "types": "./dist/register.d.ts",
         "default": "./dist/register.js"
+      }
+    },
+    "imports": {
+      "#source/*": {
+        "types": "./dist/*.d.ts"
       }
     }
   },

@@ -1,4 +1,4 @@
-import { tester } from '../test/ruleTester.ts';
+import { tester } from '#test/ruleTester';
 import plugin from './plugin.ts';
 
 const MESSAGE =

@@ -150,6 +150,14 @@ intent, not a requirement to preserve every detail.
 - Test the public API, not the implementation. Assert what a caller can
   observe, such as the results it gets and the errors raised. Do not assert
   private state or which code path ran.
+- Import what a test tests by the name that the package exports it under,
+  as `hypotes` or `hypotes/fast-check`, which `yarn test:dist` runs on the
+  bundle. Import what the package doesn't export by its private path, as
+  `test/title.test.ts` imports `#source/title`. A private path names the
+  source in both runs, so under `yarn test:dist` it loads a second copy of
+  the module beside the bundle's. That suits a module without state, such as
+  `equals.ts`; test one that holds state, such as `tests.ts` or `mocks.ts`,
+  through the exports.
 - Prefer property tests, with fast-check.
 - Use generic shapes in examples and tests, rather than the formats of any one
   application.
@@ -197,12 +205,24 @@ intent, not a requirement to preserve every detail.
 - Node runs the TypeScript source as it is, by stripping its types, so use
   only erasable syntax, and import relative modules with their `.ts`
   extensions.
+- Import a module in the same directory, or in one below it, by its relative
+  path, as `./site.ts`. Import one in a parent directory by a private path
+  of package.json's `imports`, as `#source/site` or `#test/ruleTester`,
+  rather than by `../`. A private path leaves out the extension, which
+  `imports` adds: tsc rewrites the extensions of relative paths only, and
+  rejects any other that ends in `.ts` where it writes declarations. Import
+  an entry point by the name that the package exports it under, as
+  `hypotes/oxlint`, not by its private path. oxlint checks each of these.
 - `yarn build` bundles each entry point into `dist/` with rolldown, with the
   modules that entry points share in a chunk, and tsc writes the
   declarations. In this repository, the package's exports name the source, or
   the bundle with the `hypotes-dist` condition, which `yarn test:dist` runs
   the tests on; the published package's, in `publishConfig`, name the bundle.
-  A new entry point goes in `rolldown.config.ts` and in both exports.
+  A new entry point goes in `rolldown.config.ts`, in both exports, and in
+  the pattern of oxlint's `no-restricted-imports`.
+- rolldown resolves the private paths as it bundles, so the bundle has none,
+  but tsc keeps them in the declarations. The `imports` of `publishConfig`
+  name the declarations in `dist/` for those, and nothing to run.
 - The runtime dependencies are Vitest's packages, and tinyrainbow, which
   they colour messages with, in the range that they require: `expect.ts`
   turns off the colours of the copy that they load. fast-check, oxlint,

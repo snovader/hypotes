@@ -1,7 +1,7 @@
 // This repository's rules for oxlint, which loads them as a JS plugin. The
 // rules for tests are the package's own, in `source/oxlint`.
-import type { Plugin } from '../source/oxlint/index.ts';
-import type { Context, Fix, NodeOf, Rule } from '../source/oxlint/types.ts';
+import type { Plugin } from 'hypotes/oxlint';
+import type { Context, Fix, NodeOf, Rule } from '#source/oxlint/types';
 
 type ImportDeclaration = NodeOf<'ImportDeclaration'>;
 type ImportDeclarationSpecifier = ImportDeclaration['specifiers'][number];
