@@ -13,11 +13,15 @@
 // them as the mocked module loads. A factory's error surfaces where its
 // module is imported, as Vitest's does.
 //
-// A mock can stand in for a file that isn't there, by the URL that
-// `import.meta.resolve` gives the file, where Vitest 5.1 fails to import
-// it, with "Cannot find module". But it can't stand in for a package that
-// isn't installed, as Vitest's can: `import.meta.resolve` gives the package
-// no URL, so the call that mocks it throws ERR_MODULE_NOT_FOUND.
+// A mock can stand in for a package that isn't installed, or for an import
+// that its package doesn't define, as Vitest's can. `import.meta.resolve`
+// gives their specifiers no URL, so the URL of such a mock's original is
+// `hypotes-package:` followed by the specifier, and an import of the
+// specifier that fails to resolve, from any module, resolves to the mock.
+// As with Vitest 5.1, a mock can't stand in for a file that isn't there,
+// which fails to import as it does unmocked, or for a subpath that an
+// installed package doesn't export: the call that mocks it throws, as
+// `import.meta.resolve` does.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type {
     LoadFnOutput,
@@ -58,6 +62,11 @@ const MOCKS = Symbol.for(MOCKS_KEY);
 const MOCK = 'hypotes-mock:';
 /** The scheme of the URL that resolves to a mocked module's original */
 const ACTUAL = 'hypotes-actual:';
+/**
+ * The scheme of the URL of a package that isn't installed, or an import that
+ * isn't defined, which a mock stands in for: `hypotes-package:<specifier>`
+ */
+const PACKAGE = 'hypotes-package:';
 
 /**
  * The drive of a Windows path, such as `C:\a.ts`, which parses as a URL whose
@@ -130,7 +139,7 @@ class ModuleMock {
         const outcome = this.#outcome;
         if (outcome === undefined) {
             throw new Error(
-                `The factory of the mock of ${this.#original} returned a promise, which hadn't settled when the module was imported. A module that mocks modules waits for their factories before its imports, so import it from there, after the mock, or from a module that it imports. Mocks settle in the order of their calls, so mock a module that a factory imports before the mock of that factory.`
+                `The factory of the mock of ${nameOf(this.#original)} returned a promise, which hadn't settled when the module was imported. A module that mocks modules waits for their factories before its imports, so import it from there, after the mock, or from a module that it imports. Mocks settle in the order of their calls, so mock a module that a factory imports before the mock of that factory.`
             );
         }
         if ('error' in outcome) {
@@ -152,7 +161,7 @@ class ModuleMock {
         if (typeof exports !== 'object' || exports === null) {
             this.#outcome = {
                 error: new TypeError(
-                    `The factory of the mock of ${this.#original} returned ${String(exports)}, rather than an object of the module's exports. A default export is its "default" key.`
+                    `The factory of the mock of ${nameOf(this.#original)} returned ${String(exports)}, rather than an object of the module's exports. A default export is its "default" key.`
                 )
             };
             return;
@@ -164,7 +173,7 @@ class ModuleMock {
     #fail(error: unknown): void {
         this.#outcome = {
             error: new Error(
-                `The factory of the mock of ${this.#original} failed. The factory of vi.mock() runs above the module's code, where the call is hoisted, so it can read only the variables that vi.hoisted() declares.`,
+                `The factory of the mock of ${nameOf(this.#original)} failed. The factory of vi.mock() runs above the module's code, where the call is hoisted, so it can read only the variables that vi.hoisted() declares.`,
                 { cause: error }
             )
         };
@@ -241,6 +250,21 @@ export class ModuleMocks {
         return this.#byId[id].exports();
     }
 
+    /**
+     * Resolves the path of a mock from the module whose `import.meta` this
+     * gets, for the transform, which passes the URL to `vi`
+     */
+    resolvePath(meta: ImportMeta, path: string): string {
+        try {
+            return meta.resolve(path);
+        } catch (error) {
+            if (!namesNoPackage(error)) {
+                throw error;
+            }
+            return PACKAGE + path;
+        }
+    }
+
     /** Resolves a mocked module to its mock, and an actual one to its URL */
     resolve(
         specifier: string,
@@ -248,18 +272,20 @@ export class ModuleMocks {
         nextResolve: NextResolve
     ): ResolveFnOutput {
         if (specifier.startsWith(ACTUAL)) {
-            return { url: specifier.slice(ACTUAL.length), shortCircuit: true };
+            return { url: actualURL(specifier), shortCircuit: true };
         }
 
         let resolved: ResolveFnOutput;
         try {
             resolved = nextResolve(specifier, context);
         } catch (error) {
-            const missing = this.#mockOfMissing(error);
-            if (missing === undefined) {
+            const mock = namesNoPackage(error)
+                ? this.#mocks.get(PACKAGE + specifier)
+                : undefined;
+            if (mock === undefined) {
                 throw error;
             }
-            return { url: missing.url, format: 'module', shortCircuit: true };
+            return { url: mock.url, format: 'module', shortCircuit: true };
         }
 
         const mock = this.#mocks.get(resolved.url);
@@ -267,18 +293,6 @@ export class ModuleMocks {
         return mock === undefined
             ? resolved
             : { url: mock.url, format: 'module', shortCircuit: true };
-    }
-
-    /**
-     * The mock of the file that an import didn't find, by the URL that the
-     * error names, which `import.meta.resolve` gave its mock
-     */
-    #mockOfMissing(error: unknown): ModuleMock | undefined {
-        const { code, url } = error as { code?: unknown; url?: unknown };
-
-        return code === 'ERR_MODULE_NOT_FOUND' && typeof url === 'string'
-            ? this.#mocks.get(url)
-            : undefined;
     }
 
     /** Loads a mock's module, which exports its factory's exports */
@@ -298,6 +312,43 @@ export class ModuleMocks {
 
         return { format: 'module', source, shortCircuit: true };
     }
+}
+
+/**
+ * Whether the error of a resolution says that its specifier names no
+ * package that's installed, or import that its package defines. That of a
+ * file that isn't there has the file's URL.
+ */
+function namesNoPackage(error: unknown): boolean {
+    const { code, url } = error as { code?: unknown; url?: unknown };
+
+    return (
+        (code === 'ERR_MODULE_NOT_FOUND' && url === undefined) ||
+        code === 'ERR_PACKAGE_IMPORT_NOT_DEFINED'
+    );
+}
+
+/**
+ * The URL of the original that the specifier names, after `hypotes-actual:`,
+ * which a package that isn't installed doesn't have
+ */
+function actualURL(specifier: string): string {
+    const url = specifier.slice(ACTUAL.length);
+    if (url.startsWith(PACKAGE)) {
+        throw new Error(
+            `Cannot import the original of '${nameOf(url)}', which isn't an installed package, or an import that its package defines`
+        );
+    }
+
+    return url;
+}
+
+/**
+ * The name of a mocked module in messages: its URL, or the specifier of a
+ * package that isn't installed
+ */
+function nameOf(url: string): string {
+    return url.startsWith(PACKAGE) ? url.slice(PACKAGE.length) : url;
 }
 
 /**
