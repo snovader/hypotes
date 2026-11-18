@@ -1,12 +1,13 @@
 {
   "name": "hypotes",
   "version": "0.0.0",
-  "description": "Vitest's API and matchers for tests, on Node's test runner",
+  "description": "Vitest's API on node:test. Same tests, no Vite.",
   "keywords": [
     "expect",
     "fast-check",
     "mock",
     "node:test",
+    "property-based-testing",
     "test",
     "vitest"
   ],
