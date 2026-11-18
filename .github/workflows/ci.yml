@@ -9,6 +9,9 @@ on:
     branches:
       - main
 
+  # The release workflow runs the same checks before it publishes
+  workflow_call:
+
 # Read-only, unless a job asks for more
 permissions:
   contents: read
