@@ -5,7 +5,8 @@
 // so that the modules that it imports load with its mocks. So do its exports
 // of other modules' exports, as `export { a } from` and `export * as`, which
 // load those modules too. The paths of its mocks resolve from it, as
-// `import.meta.resolve` resolves them there, and its imports and dynamic
+// `import.meta.resolve` resolves them there, or to a URL of their own for a
+// package that isn't installed, as `mocks.ts` says. Its imports and dynamic
 // imports wait for the factories of the mocks before them. A source map maps
 // its stack traces, and the sites of its tests, to where they're written.
 //
@@ -85,6 +86,8 @@ const HYPOTES = 'hypotes';
 
 /** The registry, from the code of a transformed module */
 const MOCKS = `globalThis[Symbol.for(${JSON.stringify(MOCKS_KEY)})]`;
+/** The start of a call that resolves the path of a mock from the module */
+const RESOLVE = `${MOCKS}.resolvePath(import.meta, `;
 
 const decoder = new TextDecoder();
 const require = createRequire(import.meta.url);
@@ -298,9 +301,9 @@ function locationOf(code: string, offset: number): string {
 }
 
 /**
- * Wraps the path of each mock in `import.meta.resolve()`, which resolves it
- * from the module, and returns where they are. `import('./a.ts')`, which
- * types a mock's factory, is `'./a.ts'`.
+ * Wraps the path of each mock in the registry's `resolvePath()`, which
+ * resolves it from the module, and returns where they are.
+ * `import('./a.ts')`, which types a mock's factory, is `'./a.ts'`.
  */
 function resolvePaths(
     s: MagicString,
@@ -322,13 +325,9 @@ function resolvePaths(
         if (awaited.type === 'ImportExpression') {
             const { source } = awaited;
             const specifier = code.slice(source.start, source.end);
-            s.overwrite(
-                path.start,
-                path.end,
-                `import.meta.resolve(${specifier})`
-            );
+            s.overwrite(path.start, path.end, `${RESOLVE}${specifier})`);
         } else {
-            s.prependRight(path.start, 'import.meta.resolve(');
+            s.prependRight(path.start, RESOLVE);
             s.appendLeft(path.end, ')');
         }
 
