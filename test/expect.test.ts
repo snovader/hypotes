@@ -16,6 +16,9 @@ expect.extend({
     }
 });
 
+/** Rows that each print on a line of their own, more than a diff compares */
+const ROWS = Array.from({ length: 5000 }, (_, index) => ({ index, name: 'row' }));
+
 /** The message of the error that the function throws */
 function messageOf(fn: () => void): string {
     try {
@@ -74,5 +77,48 @@ describe('expect', () => {
         expect(message).toContain(
             "+ actual - expected\n\n+ { a: [ 1, -0 ], b: 'same' }\n- { a: [ 1, 0 ], b: 'same' }"
         );
+    });
+
+    it('should add no diff to the message of a matcher whose values print the same', () => {
+        const message = messageOf(() => {
+            expect({ a: 1 }).not.toEqual({ a: 1 });
+        });
+
+        expect(message).toBe('expected { a: 1 } to not deeply equal { a: 1 }');
+    });
+
+    it('should show the lines of large values that differ, with those around them', () => {
+        const message = messageOf(() => {
+            expect(ROWS.with(4000, { index: -1, name: 'row' })).toEqual(ROWS);
+        });
+
+        expect(message).toContain(
+            [
+                '+ actual - expected',
+                '',
+                '  ...',
+                "    { index: 3997, name: 'row' },",
+                "    { index: 3998, name: 'row' },",
+                "    { index: 3999, name: 'row' },",
+                "+   { index: -1, name: 'row' },",
+                "-   { index: 4000, name: 'row' },",
+                "    { index: 4001, name: 'row' },",
+                "    { index: 4002, name: 'row' },",
+                "    { index: 4003, name: 'row' },",
+                '  ...'
+            ].join('\n')
+        );
+    });
+
+    it('should cut the diff of large values whose lines all differ', () => {
+        const others = ROWS.map(({ index }) => ({ index: -1 - index, name: 'row' }));
+        const lines = messageOf(() => {
+            expect(others).toEqual(ROWS);
+        }).split('\n');
+
+        expect(lines).toContain("+   { index: -1, name: 'row' },");
+        expect(lines).toContain("-   { index: 0, name: 'row' },");
+        expect(lines.at(-1)).toBe('  ...');
+        expect(lines.length).toBeLessThan(ROWS.length);
     });
 });

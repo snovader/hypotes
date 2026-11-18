@@ -71,7 +71,11 @@ const { value: VALUES } = fc.letrec(tie => ({
         tie('value').map(value => new Map([['a', value]])),
         tie('value').map(value => new Set([value])),
         fc.constantFrom(new Error('a'), new Date(0)),
-        fc.constantFrom(expect.anything(), expect.any(Number))
+        fc.constantFrom(expect.anything(), expect.any(Number)),
+        // Which compare what's inside them with the matcher's testers, but
+        // never strictly
+        tie('value').map((value): unknown => expect.objectContaining({ a: value })),
+        tie('value').map((value): unknown => expect.arrayContaining([value]))
     )
 }));
 
@@ -132,6 +136,16 @@ describe('equals with the fast tester', () => {
         }
     );
 
+    property.prop([VALUES, VALUES, fc.boolean()])(
+        "should give the result without it when equals doesn't compare as the testers' matcher does",
+        (actual, expected, strict) => {
+            const testers = strict ? TO_EQUAL : TO_STRICT_EQUAL;
+            const result = equals(actual, expected, testers.slice(1), strict);
+
+            expect(equals(actual, expected, testers, strict)).toBe(result);
+        }
+    );
+
     property.prop([VALUES])(
         'should give the results of both matchers without it for a copy',
         value => {
@@ -152,8 +166,10 @@ describe('fastEquality', () => {
             const testers = strict ? TO_STRICT_EQUAL : TO_EQUAL;
             const answer = fastEquality.call({ equals }, actual, expected, testers);
 
+            // Strictly or not, which the tester isn't told
             if (answer !== undefined) {
-                expect(answer).toBe(equals(actual, expected, testers.slice(1), strict));
+                expect(answer).toBe(equals(actual, expected, testers.slice(1), true));
+                expect(answer).toBe(equals(actual, expected, testers.slice(1), false));
             }
         }
     );
@@ -186,6 +202,20 @@ describe('fastEquality', () => {
 
         expect(holey).toEqual([undefined, 1]);
         expect(holey).not.toStrictEqual([undefined, 1]);
+    });
+
+    it('should leave a key of undefined that the other lacks to equals, which knows if it compares strictly', () => {
+        expect({ a: 1, b: undefined }).toEqual({ a: 1 });
+        expect({ a: 1, b: undefined }).not.toStrictEqual({ a: 1 });
+        expect(equals({ a: 1, b: undefined }, { a: 1 }, TO_EQUAL, true)).toBe(false);
+    });
+
+    it('should compare what an asymmetric matcher holds as toEqual does, in toStrictEqual too', () => {
+        const containing: unknown = expect.objectContaining({ a: { b: 1 } });
+        const including: unknown = expect.arrayContaining([{ b: 1 }]);
+
+        expect({ a: { b: 1, c: undefined } }).toStrictEqual(containing);
+        expect([{ b: 1, c: undefined }]).toStrictEqual(including);
     });
 
     it.each([

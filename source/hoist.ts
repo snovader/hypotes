@@ -2,15 +2,19 @@
 // outside node_modules, the calls of `vi.mock()`, `vi.unmock()` and
 // `vi.hoisted()` at its top level move above its code, and its imports, but
 // those from hypotes, which define `vi`, become dynamic imports after them,
-// so that the modules that it imports load with its mocks. The paths of its
-// mocks resolve from it, as `import.meta.resolve` resolves them there, and
-// its imports and dynamic imports wait for the factories of the mocks before
-// them. A source map maps its stack traces, and the sites of its tests, to
-// where they're written.
+// so that the modules that it imports load with its mocks. So do its exports
+// of other modules' exports, as `export { a } from` and `export * as`, which
+// load those modules too. The paths of its mocks resolve from it, as
+// `import.meta.resolve` resolves them there, and its imports and dynamic
+// imports wait for the factories of the mocks before them. A source map maps
+// its stack traces, and the sites of its tests, to where they're written.
 //
 // Vitest's transform reads each imported binding from its module's
 // namespace, where this one declares it as a constant: a binding that its
-// module reassigns keeps the value that it had when it was imported.
+// module reassigns keeps the value that it had when it was imported, or
+// exported from there. And where Vitest's exports every name of
+// `export * from` as the module loads, this one rejects it: a module's
+// exports are named before it runs, so that one would load before the mocks.
 //
 // oxc-parser parses the module, and magic-string writes it and its source
 // map: optional peer dependencies, which load once a module needs them.
@@ -43,6 +47,14 @@ interface Hoisted {
     readonly statement: Span;
     readonly call: Oxc.CallExpression;
 }
+
+/** `export { a } from`, rather than an export of the module's own */
+type ExportFrom = Oxc.ExportNamedDeclaration & {
+    readonly source: Oxc.StringLiteral;
+};
+
+/** A statement that loads another module, for its exports or to run it */
+type Load = ExportFrom | Oxc.ExportAllDeclaration | Oxc.ImportDeclaration;
 
 interface Dependencies {
     readonly MagicString: typeof MagicStringModule.MagicString;
@@ -199,8 +211,8 @@ function methodOf(node: Oxc.CallExpression): string | undefined {
 
 /**
  * The statements at the module's top level that call `vi.mock()` or
- * `vi.unmock()`, or `vi.hoisted()`, which can be awaited and declare
- * variables
+ * `vi.unmock()`, or `vi.hoisted()`, which can be awaited, and declare what
+ * it returns, if the statement declares nothing else: it moves whole
  */
 function hoistedStatements(program: Oxc.Program): Hoisted[] {
     const hoisted: Hoisted[] = [];
@@ -208,8 +220,11 @@ function hoistedStatements(program: Oxc.Program): Hoisted[] {
         let expression: Oxc.Expression | null | undefined;
         if (statement.type === 'ExpressionStatement') {
             expression = statement.expression;
-        } else if (statement.type === 'VariableDeclaration') {
-            expression = statement.declarations[0]?.init;
+        } else if (
+            statement.type === 'VariableDeclaration' &&
+            statement.declarations.length === 1
+        ) {
+            expression = statement.declarations[0].init;
         }
 
         const call =
@@ -234,7 +249,9 @@ function hoistedStatements(program: Oxc.Program): Hoisted[] {
 
 /**
  * Throws for a call that would be hoisted from outside the top level, where
- * it would run before the code around it, as Vitest's transform does
+ * it would run before the code around it, as Vitest's transform does, or
+ * from a statement that would take more with it: an export, or other
+ * variables
  */
 function checkTopLevel(
     calls: readonly Call[],
@@ -259,11 +276,11 @@ function checkTopLevel(
 
     throw new SyntaxError(
         [
-            `${path} calls vi.mock(), vi.unmock() or vi.hoisted() outside of its top level:`,
+            `${path} calls vi.mock(), vi.unmock() or vi.hoisted() where they can't be hoisted from:`,
             '',
             ...lines,
             '',
-            "They're hoisted above the module's code, so call them at its top level, where they show when they run."
+            "They're hoisted above the module's code, so call each in a statement of its own at the module's top level, where it shows when it runs. The statement can declare what vi.hoisted() returns, if it declares nothing else and isn't an export."
         ].join('\n')
     );
 }
@@ -339,8 +356,8 @@ function wrapDynamicImports(
 
 /**
  * Moves the hoisted statements above the module's code, in order, and its
- * imports after them, as dynamic imports, which wait for the factories of
- * the mocks before them
+ * imports and exports of other modules after them, as dynamic imports, which
+ * wait for the factories of the mocks before them
  */
 function hoist(
     s: MagicString,
@@ -349,14 +366,12 @@ function hoist(
     code: string,
     path: string
 ): void {
-    const imports = program.body.filter(
-        (statement): statement is Oxc.ImportDeclaration =>
-            statement.type === 'ImportDeclaration' && isConverted(statement)
-    );
-    checkVi(imports, path);
+    const loads = program.body.filter(isConverted);
+    checkVi(loads, path);
+    checkExportAll(loads, code, path);
 
     // After a hashbang, which comments out the rest of its line
-    let index = /^#!.*\n/u.exec(code)?.[0].length ?? 0;
+    let index = /^#!.*\r?\n/u.exec(code)?.[0].length ?? 0;
     for (const { statement } of hoisted) {
         const end = lineEnd(code, statement.end);
         if (end === statement.end) {
@@ -365,35 +380,56 @@ function hoist(
         index = moveTo(s, statement.start, end, index);
     }
 
-    for (const [position, node] of imports.entries()) {
+    for (const [position, node] of loads.entries()) {
         const settle = position === 0 ? `await ${MOCKS}.settle();\n` : '';
         s.overwrite(
             node.start,
             node.end,
-            `${settle}${dynamicImport(node, code)}\n`
+            `${settle}${dynamicLoad(node, position, code)}\n`
         );
         index = moveTo(s, node.start, node.end, index);
     }
 }
 
 /**
- * Whether the import becomes a dynamic one: unless it's of types, which
- * Node strips, from hypotes, or of a phase, which a dynamic import can't be
+ * Whether the statement loads a module that becomes a dynamic import: an
+ * import, or an export of another module's exports, unless it's of types,
+ * which Node strips, from hypotes, or of a phase, which a dynamic import
+ * can't be
  */
-function isConverted(node: Oxc.ImportDeclaration): boolean {
-    return (
-        node.importKind !== 'type' &&
-        node.phase === null &&
-        node.source.value !== HYPOTES
-    );
+function isConverted(
+    statement: Oxc.Program['body'][number]
+): statement is Load {
+    switch (statement.type) {
+        case 'ImportDeclaration':
+            return (
+                statement.importKind !== 'type' &&
+                statement.phase === null &&
+                statement.source.value !== HYPOTES
+            );
+        case 'ExportNamedDeclaration':
+            return (
+                statement.source !== null &&
+                statement.exportKind !== 'type' &&
+                statement.source.value !== HYPOTES
+            );
+        case 'ExportAllDeclaration':
+            return (
+                statement.exportKind !== 'type' &&
+                statement.source.value !== HYPOTES
+            );
+        default:
+            return false;
+    }
 }
 
 /** Throws if `vi` comes from an import that would follow the mocks */
-function checkVi(
-    imports: readonly Oxc.ImportDeclaration[],
-    path: string
-): void {
-    for (const node of imports) {
+function checkVi(loads: readonly Load[], path: string): void {
+    for (const node of loads) {
+        if (node.type !== 'ImportDeclaration') {
+            continue;
+        }
+
         const vi = node.specifiers.some(
             specifier =>
                 specifier.local.name === 'vi' &&
@@ -405,6 +441,24 @@ function checkVi(
         if (vi) {
             throw new SyntaxError(
                 `${path} imports vi from "${node.source.value}", where vi.mock(), vi.unmock() and vi.hoisted() are hoisted above its imports, but those from "${HYPOTES}", which vi has to come from`
+            );
+        }
+    }
+}
+
+/**
+ * Throws for `export * from`, which names its exports only by loading the
+ * module, so it can't follow the mocks, as a dynamic import does
+ */
+function checkExportAll(
+    loads: readonly Load[],
+    code: string,
+    path: string
+): void {
+    for (const node of loads) {
+        if (node.type === 'ExportAllDeclaration' && node.exported === null) {
+            throw new SyntaxError(
+                `${path} exports every export of ${code.slice(node.source.start, node.source.end)} at ${path}:${locationOf(code, node.start)}, which would load before the mocks that are hoisted above the module's imports. Export its exports by name, or as a namespace, with "export * as", which load after them.`
             );
         }
     }
@@ -437,8 +491,12 @@ function moveTo(
     return index;
 }
 
-/** The import, as a dynamic one that declares its bindings as constants */
-function dynamicImport(node: Oxc.ImportDeclaration, code: string): string {
+/**
+ * The statement, as a dynamic import that declares its bindings as
+ * constants, and exports those that it exports. `position` tells its
+ * constants from those of the module's other statements.
+ */
+function dynamicLoad(node: Load, position: number, code: string): string {
     const sliceOf = ({ start, end }: Span): string => code.slice(start, end);
     const attributes = node.attributes.map(
         ({ key, value }) => `${sliceOf(key)}: ${sliceOf(value)}`
@@ -447,6 +505,26 @@ function dynamicImport(node: Oxc.ImportDeclaration, code: string): string {
         attributes.length > 0 ? `, { with: { ${attributes.join(', ')} } }` : '';
     const load = `await import(${sliceOf(node.source)}${options})`;
 
+    switch (node.type) {
+        case 'ImportDeclaration':
+            return importOf(node, load, sliceOf);
+        case 'ExportNamedDeclaration':
+            return exportOf(node, load, position, sliceOf);
+        default: {
+            // `export * as`, since `checkExportAll` threw for `export *`
+            const local = `__hypotes_export_${position}__`;
+            const exported = sliceOf(node.exported as Span);
+            return `const ${local} = ${load}; export { ${local} as ${exported} };`;
+        }
+    }
+}
+
+/** The import's bindings, declared from what `load` imports */
+function importOf(
+    node: Oxc.ImportDeclaration,
+    load: string,
+    sliceOf: (span: Span) => string
+): string {
     let namespace: string | undefined;
     const properties: string[] = [];
     for (const specifier of node.specifiers) {
@@ -471,4 +549,29 @@ function dynamicImport(node: Oxc.ImportDeclaration, code: string): string {
     }
 
     return properties.length > 0 ? `const ${pattern} = ${load};` : `${load};`;
+}
+
+/**
+ * The exports of `export { a as b } from`, from constants of what `load`
+ * imports, on one line, as the statement was
+ */
+function exportOf(
+    node: ExportFrom,
+    load: string,
+    position: number,
+    sliceOf: (span: Span) => string
+): string {
+    const properties: string[] = [];
+    const exports: string[] = [];
+    for (const [index, specifier] of node.specifiers.entries()) {
+        if (specifier.exportKind !== 'type') {
+            const local = `__hypotes_export_${position}_${index}__`;
+            properties.push(`${sliceOf(specifier.local)}: ${local}`);
+            exports.push(`${local} as ${sliceOf(specifier.exported)}`);
+        }
+    }
+
+    return properties.length > 0
+        ? `const { ${properties.join(', ')} } = ${load}; export { ${exports.join(', ')} };`
+        : `${load};`;
 }

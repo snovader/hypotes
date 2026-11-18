@@ -10,6 +10,14 @@
 // properties set on them, and objects by their string keys, not their symbol
 // keys. Anything else, such as a Map or an asymmetric matcher, it leaves to
 // `equals`, which calls it again for what's inside.
+//
+// A tester gets the testers of the matcher, but not whether `equals` compares
+// strictly, and the two don't always go together: an asymmetric matcher in
+// `toStrictEqual` compares what's inside it with those testers, but not
+// strictly. So this tester answers only where both give the same result, and
+// leaves the rest to `equals`: a key whose value is undefined, which the
+// other object lacks, and, with the testers of `toEqual`, a hole in an array
+// where the other has undefined.
 import { Buffer } from 'node:buffer';
 import {
     arrayBufferEquality,
@@ -42,10 +50,11 @@ type TypedArray =
     | Uint32Array;
 
 /**
- * Whether `a` and `b` are equal as `toEqual` compares them, or `toStrictEqual`
- * if `customTesters` are its testers, or undefined to leave them to `equals`.
- * It leaves them all to it with testers of other matchers, such as
- * `toMatchObject`, or other custom testers, whose results it couldn't know.
+ * Whether `a` and `b` are equal as `equals` compares them with the testers
+ * of `toEqual` or of `toStrictEqual`, strictly or not, or undefined to leave
+ * them to `equals`. It leaves them all to it with testers of other matchers,
+ * such as `toMatchObject`, or other custom testers, whose results it couldn't
+ * know.
  */
 export const fastEquality: Tester = function (a, b, customTesters) {
     const strict = strictnessOf(customTesters);
@@ -53,7 +62,8 @@ export const fastEquality: Tester = function (a, b, customTesters) {
 };
 
 /**
- * Whether the testers are those of `toStrictEqual`, rather than `toEqual`, or
+ * Whether the testers are those of `toStrictEqual`, which compare
+ * constructors and tell holes from undefined, rather than `toEqual`, or
  * undefined if they're another matcher's
  */
 function strictnessOf(customTesters: readonly Tester[]): boolean | undefined {
@@ -134,8 +144,9 @@ function isPlainObject(value: object): value is Record<string, unknown> {
 
 /**
  * Objects of the same constructor, if strict, with the same own enumerable
- * string keys, and equal values at them: `toEqual` leaves out keys whose
- * values are undefined
+ * string keys, and equal values at them. Where the keys that only one of
+ * them has all have undefined values, they're equal unless `equals` compares
+ * strictly, which is left to it.
  */
 function compareObjects(
     a: Record<string, unknown>,
@@ -153,58 +164,48 @@ function compareObjects(
 
     const aKeys = Object.keys(a);
     const bKeys = Object.keys(b);
-    if (strict) {
-        return aKeys.length === bKeys.length
-            ? compareValues(a, b, aKeys, true, depth)
-            : false;
+    let sameKeys = aKeys.length === bKeys.length;
+    for (const key of aKeys) {
+        const value = a[key];
+        if (Object.hasOwn(b, key)) {
+            const equal = compare(value, b[key], strict, depth + 1);
+            if (equal !== true) {
+                return equal;
+            }
+        } else if (value === undefined) {
+            sameKeys = false;
+        } else {
+            return false;
+        }
     }
 
-    if (countDefined(a, aKeys) !== countDefined(b, bKeys)) {
-        return false;
+    if (sameKeys) {
+        return true;
     }
 
-    return compareValues(a, b, aKeys, false, depth);
+    return hasDefinedKeyMissingFrom(b, bKeys, a) ? false : undefined;
 }
 
-/**
- * The values of `a` at its keys against those of `b`, which has the same
- * number of keys, or of keys with values other than undefined, if not strict
- */
-function compareValues(
-    a: object,
-    b: object,
-    aKeys: readonly string[],
-    strict: boolean,
-    depth: number
-): boolean | undefined {
-    for (const key of aKeys) {
-        const value = (a as Record<string, unknown>)[key];
-        if (!strict && value === undefined) {
-            continue;
-        }
-
-        if (!Object.hasOwn(b, key)) {
-            return false;
-        }
-
-        const other = (b as Record<string, unknown>)[key];
-        if (!strict && other === undefined) {
-            return false;
-        }
-
-        const equal = compare(value, other, strict, depth + 1);
-        if (equal !== true) {
-            return equal;
+/** Whether a key of the object has a value other than undefined, and the other lacks it */
+function hasDefinedKeyMissingFrom(
+    object: Record<string, unknown>,
+    keys: readonly string[],
+    other: object
+): boolean {
+    for (const key of keys) {
+        if (!Object.hasOwn(other, key) && object[key] !== undefined) {
+            return true;
         }
     }
 
-    return true;
+    return false;
 }
 
 /**
  * Arrays of the same constructor, if strict, and length, with equal elements.
- * A hole is missing, which `toEqual` takes undefined as too, and
- * `toStrictEqual` tells from undefined.
+ * A hole is missing, which the testers of `toStrictEqual` tell from
+ * undefined. With those of `toEqual`, the two are equal unless `equals`
+ * compares strictly, which is left to it.
  */
 function compareArrays(
     a: unknown[],
@@ -225,14 +226,10 @@ function compareArrays(
         const other = b[index];
         // Equal primitives, but -0 and 0, which `===` takes as equal
         if (value === other && typeof value !== 'object' && value !== 0) {
-            if (value === undefined && strict && index in a !== index in b) {
-                return false;
+            if (value === undefined && index in a !== index in b) {
+                return strict ? false : undefined;
             }
             continue;
-        }
-
-        if (!strict && (value === undefined || other === undefined)) {
-            return false;
         }
 
         const equal = compare(value, other, strict, depth + 1);
@@ -277,16 +274,4 @@ function haveSameElements(a: TypedArray, b: TypedArray): boolean {
     }
 
     return true;
-}
-
-/** How many of the keys have values other than undefined */
-function countDefined(object: object, keys: readonly string[]): number {
-    let count = 0;
-    for (const key of keys) {
-        if ((object as Record<string, unknown>)[key] !== undefined) {
-            count++;
-        }
-    }
-
-    return count;
 }

@@ -20,6 +20,7 @@ tester.run('expect-expect', plugin.rules['expect-expect'], {
     valid: [
         imported("it('asserts', () => { expect(1).toBe(1); });"),
         imported("test('asserts', { skip: true }, () => { expect(1).toBe(1); });"),
+        imported("test('asserts', () => { expect(1).toBe(1); }, { timeout: 10 });"),
         imported("it('asserts through a helper', () => { expectOne(1); });"),
         imported(
             "it('asserts in a callback', () => { [1].forEach(value => { expect(value).toBe(1); }); });"
@@ -38,6 +39,16 @@ tester.run('expect-expect', plugin.rules['expect-expect'], {
         {
             name: 'a test that asserts nothing',
             code: imported("it('asserts nothing', () => {});"),
+            errors: [{ message: NO_ASSERTION }]
+        },
+        {
+            name: 'a test with options after its function',
+            code: imported("it('asserts nothing', () => {}, { timeout: 10 });"),
+            errors: [{ message: NO_ASSERTION }]
+        },
+        {
+            name: 'a test with a timeout after its function',
+            code: imported("it('asserts nothing', () => {}, 10);"),
             errors: [{ message: NO_ASSERTION }]
         },
         {
@@ -155,7 +166,13 @@ tester.run('valid-expect', plugin.rules['valid-expect'], {
         imported(
             'async function check(): Promise<void> { return expect(promise).rejects.toThrow(); }'
         ),
-        imported('const check = (): Promise<void> => expect(promise).resolves.not.toBe(1);')
+        imported('const check = (): Promise<void> => expect(promise).resolves.not.toBe(1);'),
+        imported(
+            'await Promise.all([expect(first).resolves.toBe(1), expect(second).rejects.toThrow()]);'
+        ),
+        imported(
+            'const check = (): Promise<unknown> => Promise.allSettled([expect(promise).resolves.toBe(1)]);'
+        )
     ],
     invalid: [
         {
@@ -176,6 +193,16 @@ tester.run('valid-expect', plugin.rules['valid-expect'], {
         {
             name: 'a promise that is neither awaited nor returned',
             code: imported('expect(promise).resolves.toBe(1);'),
+            errors: [{ message: NOT_AWAITED }]
+        },
+        {
+            name: 'a promise in an array that is neither awaited nor returned',
+            code: imported('Promise.all([expect(promise).resolves.toBe(1)]);'),
+            errors: [{ message: NOT_AWAITED }]
+        },
+        {
+            name: 'a promise in an array that no method of Promise takes',
+            code: imported('await collect([expect(promise).resolves.toBe(1)]);'),
             errors: [{ message: NOT_AWAITED }]
         },
         {

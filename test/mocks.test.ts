@@ -61,6 +61,38 @@ describe('vi.mock', () => {
         expect(String(error)).toContain('imports vi from "./vi.ts"');
     });
 
+    it("should give the mock to the module's exports of the mocked module", async () => {
+        const reexports = await import('./fixtures/reexports.ts');
+
+        expect([
+            reexports.renamed,
+            reexports.name(),
+            reexports['a string'],
+            reexports.all.one
+        ]).toEqual(['mocked', 'mocked', 2, 2]);
+        expect(Object.keys(reexports).toSorted()).toEqual(['a string', 'all', 'name', 'renamed']);
+    });
+
+    it('should reject a module that exports every export of another, which would load first', async () => {
+        const error: unknown = await import('./fixtures/exportsAll.ts').catch(
+            (error: unknown) => error
+        );
+
+        expect(error).toBeInstanceOf(SyntaxError);
+        expect(String(error)).toContain("exports every export of './later.ts'");
+    });
+
+    it('should reject a statement that would hoist more than vi.hoisted()', async () => {
+        const error: unknown = await import('./fixtures/declares.ts').catch(
+            (error: unknown) => error
+        );
+
+        expect(error).toBeInstanceOf(SyntaxError);
+        expect(String(error)).toMatch(
+            /vi\.hoisted\(\) at .*declares\.ts:6:15\n.*declares\.ts:8:25\n/u
+        );
+    });
+
     it('should import a module with attributes', () => {
         expect(data).toEqual({ value: 1 });
     });
@@ -115,6 +147,39 @@ describe('vi.doMock', () => {
         const { value } = await import('./fixtures/later.ts');
 
         expect(value()).toBe('awaited');
+    });
+
+    it('should wait for a factory that returns a promise, for each import at once', async () => {
+        vi.doMock(import('./fixtures/later.ts'), async importOriginal => ({
+            ...(await importOriginal()),
+            value: () => 'awaited'
+        }));
+        const [first, second] = await Promise.all([
+            import('./fixtures/later.ts'),
+            import('./fixtures/later.ts')
+        ]);
+
+        expect([first.value(), second.value()]).toEqual(['awaited', 'awaited']);
+    });
+
+    it("should leave a factory's own imports from waiting for it", async () => {
+        vi.doMock('./fixtures/later.ts', async () => {
+            const { kept } = await import('./fixtures/partial.ts');
+            return { value: kept };
+        });
+        const { value } = await import('./fixtures/later.ts');
+
+        expect(value()).toBe('kept');
+    });
+
+    it("should mock a file that isn't there, until the mock ends", async () => {
+        const path = './fixtures/missing.ts';
+        const mocked = vi.doMock(path, () => ({ value: 'mocked' }));
+        const during = (await import(path)) as { value: string };
+        mocked[Symbol.dispose]();
+
+        expect(during.value).toBe('mocked');
+        await expect(import(path)).rejects.toThrow('Cannot find module');
     });
 
     property.prop([fc.dictionary(fc.string(), fc.anything())])(

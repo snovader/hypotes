@@ -20,6 +20,8 @@ interface RunOptions {
     readonly only?: boolean;
     /** Preloads hypotes/register, for module mocks */
     readonly register?: boolean;
+    /** Runs with --enable-source-maps, with which node:test maps the sites of tests */
+    readonly sourceMaps?: boolean;
 }
 
 const RESULTS = fileURLToPath(new URL('fixtures/results.ts', import.meta.url));
@@ -35,14 +37,15 @@ const CRLF = fileURLToPath(new URL('fixtures/crlf.ts', import.meta.url));
  */
 async function resultsOf(
     file: string,
-    { only = false, register = false }: RunOptions = {}
+    { only = false, register = false, sourceMaps = false }: RunOptions = {}
 ): Promise<Map<string, Result>> {
     const env = { ...process.env };
     // Which tells node:test that it runs in a test file's process
     delete env.NODE_TEST_CONTEXT;
 
     const preload = register ? ['--import', import.meta.resolve('hypotes/register')] : [];
-    const args = [...preload, RESULTS, file, ...(only ? ['only'] : [])];
+    const flags = sourceMaps ? ['--enable-source-maps'] : [];
+    const args = [...flags, ...preload, RESULTS, file, ...(only ? ['only'] : [])];
     const { stdout } = await promisify(execFile)(process.execPath, args, { env });
     const results = JSON.parse(stdout) as Result[];
 
@@ -55,15 +58,23 @@ function lineOf(text: string, file = DECLARATIONS): number {
     return lines.findIndex(line => line.includes(text)) + 1;
 }
 
-const [results, onlyResults, mockResults, nestedResults, unregisteredResults, crlfResults] =
-    await Promise.all([
-        resultsOf(DECLARATIONS),
-        resultsOf(ONLY, { only: true }),
-        resultsOf(MOCKS, { register: true }),
-        resultsOf(NESTED, { register: true }),
-        resultsOf(MOCKS),
-        resultsOf(CRLF, { register: true })
-    ]);
+const [
+    results,
+    onlyResults,
+    mockResults,
+    mappedResults,
+    nestedResults,
+    unregisteredResults,
+    crlfResults
+] = await Promise.all([
+    resultsOf(DECLARATIONS),
+    resultsOf(ONLY, { only: true }),
+    resultsOf(MOCKS, { register: true }),
+    resultsOf(MOCKS, { register: true, sourceMaps: true }),
+    resultsOf(NESTED, { register: true }),
+    resultsOf(MOCKS),
+    resultsOf(CRLF, { register: true })
+]);
 
 /** The result of the test or suite of the title, which ran */
 function resultOf(title: string): Result {
@@ -151,7 +162,15 @@ describe('declarations in a module that mocks modules', () => {
         });
     });
 
-    it('should run and place the tests of a module whose lines end in CRLF', () => {
+    it('should place its tests where they are with --enable-source-maps too', () => {
+        expect(mappedResults.get('mocks are hoisted above the imports')).toMatchObject({
+            passed: true,
+            file: MOCKS,
+            line: lineOf("it('mocks are hoisted above the imports'", MOCKS)
+        });
+    });
+
+    it('should run and place the tests of a module whose lines, and hashbang, end in CRLF', () => {
         expect(crlfResults.get('mocks in a module whose lines end in CRLF')).toMatchObject({
             passed: true,
             file: CRLF,

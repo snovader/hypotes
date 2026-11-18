@@ -74,6 +74,7 @@ it('options before the function apply', { skip: 'reason' }, () => {
     expect('ran').toBe('skipped');
 });
 
+// oxlint-disable-next-line hypotes/expect-expect -- Fails by its timeout
 it('a timeout after the function applies', async () => {
     // A timer that doesn't keep the process running after the test fails
     await new Promise(resolve => {

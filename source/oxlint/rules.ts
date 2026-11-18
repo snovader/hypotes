@@ -222,12 +222,15 @@ function declarerOf(callee: CallExpression['callee']): Node {
     }
 }
 
-/** Whether a call passes a function written in place as its last argument */
+/**
+ * Whether a call passes a function written in place: a test's, before its
+ * options or after them
+ */
 function hasCallback(call: CallExpression): boolean {
-    const last = call.arguments.at(-1);
-    return (
-        last?.type === 'ArrowFunctionExpression' ||
-        last?.type === 'FunctionExpression'
+    return call.arguments.some(
+        argument =>
+            argument.type === 'ArrowFunctionExpression' ||
+            argument.type === 'FunctionExpression'
     );
 }
 
@@ -315,14 +318,44 @@ function runsInTest(context: Context, call: CallExpression): boolean {
     return false;
 }
 
+/**
+ * Whether a call's promise is awaited or returned, by itself or in an array
+ * that a method of Promise takes, as in `await Promise.all([...])`
+ */
 function isAwaitedOrReturned(call: CallExpression): boolean {
     const { parent } = call;
-
-    return (
+    if (
         parent.type === 'AwaitExpression' ||
         parent.type === 'ReturnStatement' ||
         (parent.type === 'ArrowFunctionExpression' && parent.body === call)
-    );
+    ) {
+        return true;
+    }
+
+    const combined = promiseCallOf(call);
+    return combined !== undefined && isAwaitedOrReturned(combined);
+}
+
+/**
+ * The call of a method of Promise, such as `Promise.all()`, with an array
+ * that the node is an element of
+ */
+function promiseCallOf(node: Node): CallExpression | undefined {
+    const array = node.parent;
+    const call = array?.parent;
+    if (
+        array?.type !== 'ArrayExpression' ||
+        call?.type !== 'CallExpression' ||
+        call.callee === array ||
+        !isStaticMember(call.callee)
+    ) {
+        return undefined;
+    }
+
+    const { object } = call.callee;
+    return object.type === 'Identifier' && object.name === 'Promise'
+        ? call
+        : undefined;
 }
 
 function isNull(node: Argument): boolean {

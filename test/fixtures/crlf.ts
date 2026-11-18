@@ -1,5 +1,7 @@
+#!/usr/bin/env node
 // A test that `declarations.test.ts` runs with hypotes/register, in a module
-// whose lines end in CRLF, which .gitattributes keeps and oxfmt leaves
+// whose lines end in CRLF, its hashbang's too, which .gitattributes keeps and
+// oxfmt leaves
 import { expect, it, vi } from 'hypotes';
 import { value } from './later.ts';
 

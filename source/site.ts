@@ -31,14 +31,36 @@ const callers = new Map<string, Caller>();
 
 /**
  * The position of the code that called the function that calls this: the
- * test file's, when that function is one that a test file calls
+ * test file's, when that function is one that a test file calls. It's the
+ * position that node:test takes for the one where a test is written: the one
+ * that a source map maps it to, as in a module that `hypotes/register`
+ * transforms, unless node:test maps it itself, as it does with
+ * `--enable-source-maps`.
  */
 export function callerSite(): Site | undefined {
-    // This function, the one that calls it, then the one that calls that, at
-    // the position that a source map maps it to, as in a module that
-    // `hypotes/register` transforms
-    const site = getCallSites(3, { sourceMap: true })[2];
-    return site?.scriptName ? site : undefined;
+    // This function, the one that calls it, then the one that calls that
+    const compiled = getCallSites(3, { sourceMap: false })[2];
+    if (!compiled?.scriptName) {
+        return undefined;
+    }
+
+    const written = getCallSites(3, { sourceMap: true })[2];
+    if (isSamePosition(compiled, written)) {
+        return compiled;
+    }
+
+    // Node maps call sites unasked only with `--enable-source-maps`, with
+    // which node:test maps the site of each test too
+    const mapsSites = isSamePosition(getCallSites(3)[2], written);
+    return mapsSites ? compiled : written;
+}
+
+function isSamePosition(a: Site, b: Site): boolean {
+    return (
+        a.lineNumber === b.lineNumber &&
+        a.columnNumber === b.columnNumber &&
+        a.scriptName === b.scriptName
+    );
 }
 
 /** Calls `register` from code at the site, if there is one */

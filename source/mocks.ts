@@ -12,6 +12,11 @@
 // before its imports and dynamic imports, where Vitest's runner waits for
 // them as the mocked module loads. A factory's error surfaces where its
 // module is imported, as Vitest's does.
+//
+// A mock can stand in for a file that isn't there, as Vitest's can, but not
+// for a package that isn't installed, which `import.meta.resolve` gives no
+// URL for.
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type {
     LoadFnOutput,
     LoadHookContext,
@@ -52,6 +57,12 @@ const MOCK = 'hypotes-mock:';
 /** The scheme of the URL that resolves to a mocked module's original */
 const ACTUAL = 'hypotes-actual:';
 
+/**
+ * The mocks whose factories run the code that reads this, or started it: an
+ * import from a factory doesn't wait for that factory, which waits for it
+ */
+const running = new AsyncLocalStorage<ReadonlySet<ModuleMock>>();
+
 /** Imports the original of a mocked module */
 function importOriginal<T>(url: string): Promise<T> {
     return import(ACTUAL + url) as Promise<T>;
@@ -64,6 +75,8 @@ class ModuleMock {
     readonly #original: string;
     readonly #factory: MockFactoryWithHelper;
     #ran = false;
+    /** Resolves once the exports of a factory that returned a promise settle */
+    #settling: Promise<void> | undefined;
     #outcome: Outcome | undefined;
 
     constructor(id: number, original: string, factory: MockFactoryWithHelper) {
@@ -74,24 +87,28 @@ class ModuleMock {
 
     /**
      * Runs the factory, unless it ran, and resolves once its exports have
-     * settled
+     * settled, but for the factory's own code, which they wait for
      */
     run(): Promise<void> | undefined {
+        const around = running.getStore();
         if (this.#ran) {
-            return undefined;
+            return around?.has(this) === true ? undefined : this.#settling;
         }
 
         this.#ran = true;
         let exports: unknown;
         try {
-            exports = this.#factory(() => importOriginal(this.#original));
+            exports = running.run(new Set(around).add(this), () =>
+                this.#factory(() => importOriginal(this.#original))
+            );
         } catch (error) {
             this.#fail(error);
             return undefined;
         }
 
         if (typeof (exports as PromiseLike<unknown>)?.then === 'function') {
-            return this.#await(exports as PromiseLike<unknown>);
+            this.#settling = this.#await(exports as PromiseLike<unknown>);
+            return this.#settling;
         }
 
         this.#settle(exports);
@@ -194,8 +211,9 @@ export class ModuleMocks {
 
     /**
      * Runs the factories of the mocks that haven't run, and resolves once
-     * their exports have settled. A factory that this waits for can import
-     * through `wrapDynamicImport`, which runs the factories after it.
+     * the exports of every factory have settled. A factory that this waits
+     * for can import through `wrapDynamicImport`, which doesn't wait for it,
+     * and runs the factories after it.
      */
     async settle(): Promise<void> {
         for (const mock of this.#mocks.values()) {
@@ -225,12 +243,34 @@ export class ModuleMocks {
             return { url: specifier.slice(ACTUAL.length), shortCircuit: true };
         }
 
-        const resolved = nextResolve(specifier, context);
+        let resolved: ResolveFnOutput;
+        try {
+            resolved = nextResolve(specifier, context);
+        } catch (error) {
+            const missing = this.#mockOfMissing(error);
+            if (missing === undefined) {
+                throw error;
+            }
+            return { url: missing.url, format: 'module', shortCircuit: true };
+        }
+
         const mock = this.#mocks.get(resolved.url);
 
         return mock === undefined
             ? resolved
             : { url: mock.url, format: 'module', shortCircuit: true };
+    }
+
+    /**
+     * The mock of the file that an import didn't find, by the URL that the
+     * error names, which `import.meta.resolve` gave its mock
+     */
+    #mockOfMissing(error: unknown): ModuleMock | undefined {
+        const { code, url } = error as { code?: unknown; url?: unknown };
+
+        return code === 'ERR_MODULE_NOT_FOUND' && typeof url === 'string'
+            ? this.#mocks.get(url)
+            : undefined;
     }
 
     /** Loads a mock's module, which exports its factory's exports */
