@@ -21,7 +21,11 @@ updates:
           - "oxlint"
           - "oxlint-tsgolint"
       # @vitest/expect requires its own version of @vitest/spy and
-      # @vitest/utils, which the runner imports too
+      # @vitest/utils, which the runner imports too, and a range of
+      # tinyrainbow: expect.ts turns off the colours of the copy that
+      # @vitest/expect loads, so the package's tinyrainbow and theirs have to
+      # resolve to one copy
       "vitest":
         patterns:
           - "@vitest/*"
+          - "tinyrainbow"

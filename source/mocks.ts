@@ -58,6 +58,12 @@ const MOCK = 'hypotes-mock:';
 const ACTUAL = 'hypotes-actual:';
 
 /**
+ * The drive of a Windows path, such as `C:\a.ts`, which parses as a URL whose
+ * scheme is the drive's letter
+ */
+const DRIVE = /^[a-z]:/iu;
+
+/**
  * The mocks whose factories run the code that reads this, or started it: an
  * import from a factory doesn't wait for that factory, which waits for it
  */
@@ -317,7 +323,7 @@ function mockSource(id: number, exports: Exports): string {
  * mocked: where it resolves to the mock's
  */
 function urlOf(method: string, path: unknown): string {
-    if (typeof path !== 'string' || !URL.canParse(path)) {
+    if (typeof path !== 'string' || !URL.canParse(path) || DRIVE.test(path)) {
         throw new TypeError(
             `${method} got ${typeof path === 'string' ? JSON.stringify(path) : typeof path}, rather than a URL that hypotes/register resolved its path to. It transforms the ES modules outside node_modules that call it, which it resolves the path from.`
         );

@@ -233,6 +233,14 @@ describe('vi.doMock', () => {
         expect(() => doMock('./fixtures/later.ts', () => ({}))).toThrow(TypeError);
     });
 
+    property.prop([fc.stringMatching(/^[A-Za-z]:[\\/][\w\\/.-]*$/u)])(
+        'should throw for a Windows path, which parses as a URL whose scheme is its drive',
+        path => {
+            const { doMock } = vi;
+            expect(() => doMock(path, () => ({}))).toThrow(TypeError);
+        }
+    );
+
     it('should throw without a factory, since hypotes mocks exports only from one', () => {
         const doMock = vi.doMock as unknown as (path: string) => Disposable;
         expect(() => doMock(import.meta.resolve('./fixtures/later.ts'))).toThrow('takes a factory');
