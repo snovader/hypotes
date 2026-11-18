@@ -62,9 +62,12 @@ interface Dependencies {
     readonly Visitor: typeof Oxc.Visitor;
 }
 
-/** A call that the transform looks for, before it parses the module */
+/**
+ * A call that the transform looks for, before it parses the module, with
+ * type arguments or without, as in `vi.importActual<typeof import('./a.ts')>()`
+ */
 const MOCK_CALL =
-    /\bvi\s*\.\s*(?:mock|unmock|hoisted|doMock|doUnmock|importActual)\s*\(/u;
+    /\bvi\s*\.\s*(?:mock|unmock|hoisted|doMock|doUnmock|importActual)\s*[(<]/u;
 
 /** The methods of `vi` whose calls move above the module's code */
 const HOISTED = new Set(['hoisted', 'mock', 'unmock']);

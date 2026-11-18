@@ -898,6 +898,7 @@ __metadata:
     oxlint: "npm:^1.93.0"
     oxlint-tsgolint: "npm:^7.0.2007"
     rolldown: "npm:^1.3.2"
+    tinyrainbow: "npm:^3.2.0"
     typescript: "npm:^7.0.2"
   peerDependencies:
     fast-check: ^4.10.2

@@ -108,7 +108,9 @@ intent, not a requirement to preserve every detail.
   it from a helper reports the wrong site.
 - node:test's reporters don't print the diffs that Vitest's does, so a failed
   matcher that compares values carries one in its message. Make a failure
-  readable from the message alone.
+  readable from the message alone. They print a message as it is, to a file
+  too, so `expect.ts` turns off the colours of `@vitest/expect`'s messages
+  where Node prints none.
 - The equality tester in `equals.ts` answers with the result that
   `@vitest/expect`'s `equals` would give, or with undefined to leave the values
   to it. It differs only where its header says: it ignores the properties of
@@ -194,7 +196,9 @@ intent, not a requirement to preserve every detail.
   the bundle with the `hypotes-dist` condition, which `yarn test:dist` runs
   the tests on; the published package's, in `publishConfig`, name the bundle.
   A new entry point goes in `rolldown.config.ts` and in both exports.
-- The runtime dependencies are Vitest's packages alone. fast-check, oxlint,
+- The runtime dependencies are Vitest's packages, and tinyrainbow, which
+  they colour messages with, in the range that they require: `expect.ts`
+  turns off the colours of the copy that they load. fast-check, oxlint,
   oxc-parser, and magic-string are optional peer dependencies, for the entry
   points that need them: `hypotes/fast-check` imports fast-check,
   `source/oxlint` imports only oxlint's types, and `hypotes/register` loads

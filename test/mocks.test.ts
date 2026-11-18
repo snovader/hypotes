@@ -101,6 +101,13 @@ describe('vi.mock', () => {
         const actual = await vi.importActual('./fixtures/values.ts');
         expect([actual.default, actual.one]).toEqual(['original', 1]);
     });
+
+    it('should find the calls that take type arguments, in a module with no others', async () => {
+        const typed = await import('./fixtures/typed.ts');
+        const actual = await typed.actual();
+
+        expect([typed.hoistedFirst, actual.one]).toEqual([true, 1]);
+    });
 });
 
 describe('vi.doMock', () => {

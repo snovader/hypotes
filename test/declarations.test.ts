@@ -16,6 +16,11 @@ interface Result {
 }
 
 interface RunOptions {
+    /**
+     * Whether Node prints colours, as it does to a terminal, or doesn't, as to
+     * a file. As this process does, unless set.
+     */
+    readonly colors?: boolean;
     /** Runs only the tests marked only */
     readonly only?: boolean;
     /** Preloads hypotes/register, for module mocks */
@@ -30,6 +35,10 @@ const ONLY = fileURLToPath(new URL('fixtures/only.ts', import.meta.url));
 const MOCKS = fileURLToPath(new URL('fixtures/mocks.ts', import.meta.url));
 const NESTED = fileURLToPath(new URL('fixtures/nested.ts', import.meta.url));
 const CRLF = fileURLToPath(new URL('fixtures/crlf.ts', import.meta.url));
+const COLORS = fileURLToPath(new URL('fixtures/colors.ts', import.meta.url));
+
+/** The start of the escape sequences that colour text in a terminal */
+const ESCAPE = '\u001B[';
 
 /**
  * The results of a file's tests and suites, by title, from a run of it in
@@ -37,11 +46,21 @@ const CRLF = fileURLToPath(new URL('fixtures/crlf.ts', import.meta.url));
  */
 async function resultsOf(
     file: string,
-    { only = false, register = false, sourceMaps = false }: RunOptions = {}
+    { colors, only = false, register = false, sourceMaps = false }: RunOptions = {}
 ): Promise<Map<string, Result>> {
     const env = { ...process.env };
     // Which tells node:test that it runs in a test file's process
     delete env.NODE_TEST_CONTEXT;
+    if (colors !== undefined) {
+        // The process writes to a pipe, where Node prints colours only if
+        // it's told to
+        delete env.FORCE_COLOR;
+        delete env.NO_COLOR;
+        delete env.NODE_DISABLE_COLORS;
+    }
+    if (colors === true) {
+        env.FORCE_COLOR = '1';
+    }
 
     const preload = register ? ['--import', import.meta.resolve('hypotes/register')] : [];
     const flags = sourceMaps ? ['--enable-source-maps'] : [];
@@ -65,7 +84,9 @@ const [
     mappedResults,
     nestedResults,
     unregisteredResults,
-    crlfResults
+    crlfResults,
+    plainResults,
+    coloredResults
 ] = await Promise.all([
     resultsOf(DECLARATIONS),
     resultsOf(ONLY, { only: true }),
@@ -73,7 +94,9 @@ const [
     resultsOf(MOCKS, { register: true, sourceMaps: true }),
     resultsOf(NESTED, { register: true }),
     resultsOf(MOCKS),
-    resultsOf(CRLF, { register: true })
+    resultsOf(CRLF, { register: true }),
+    resultsOf(COLORS, { colors: false }),
+    resultsOf(COLORS, { colors: true })
 ]);
 
 /** The result of the test or suite of the title, which ran */
@@ -197,5 +220,20 @@ describe('declarations in a module that mocks modules', () => {
 
     it('should fail the module without hypotes/register', () => {
         expect(unregisteredResults.get(MOCKS)?.error).toContain('--import hypotes/register');
+    });
+});
+
+describe("the messages of a spy's matchers", () => {
+    const TITLE = "a spy's matcher fails";
+
+    it("should have no colours where Node prints none, as in a reporter's file", () => {
+        const error = plainResults.get(TITLE)?.error;
+
+        expect(error).toContain('1st vi.fn() call return:');
+        expect(error).not.toContain(ESCAPE);
+    });
+
+    it('should have colours where Node prints them, as to a terminal', () => {
+        expect(coloredResults.get(TITLE)?.error).toContain(ESCAPE);
     });
 });

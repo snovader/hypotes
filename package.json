@@ -81,7 +81,8 @@
   "dependencies": {
     "@vitest/expect": "^5.1.0",
     "@vitest/spy": "^5.1.0",
-    "@vitest/utils": "^5.1.0"
+    "@vitest/utils": "^5.1.0",
+    "tinyrainbow": "^3.2.0"
   },
   "peerDependencies": {
     "fast-check": "^4.10.2",

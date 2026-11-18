@@ -1,6 +1,6 @@
 // Vitest's matchers, from @vitest/expect, which adds them to chai as plugins,
 // on an `expect` of the members of Vitest's that don't need its runner
-import { diff, inspect, type InspectOptions } from 'node:util';
+import { diff, inspect, styleText, type InspectOptions } from 'node:util';
 import {
     addCustomEqualityTesters,
     chai,
@@ -14,7 +14,19 @@ import {
     type MatchersObject,
     type Tester
 } from '@vitest/expect';
+import { disableDefaultColors } from 'tinyrainbow';
 import { fastEquality } from './equals.ts';
+
+// @vitest/expect colours the messages of its spies' matchers with
+// tinyrainbow, which takes colours as wanted unless NO_COLOR says otherwise:
+// Vitest's runner decides for it. node:test's reporters print a message as it
+// is, to a file too, so the messages have colours only where Node prints
+// them: to a terminal, or with FORCE_COLOR, which node:test sets for the
+// process of a test file whose results go to one. `styleText` leaves its text
+// as it is where Node doesn't.
+if (styleText('red', 'text') === 'text') {
+    disableDefaultColors();
+}
 
 chai.use(JestExtend);
 chai.use(JestChaiExpect);
