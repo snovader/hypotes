@@ -67,7 +67,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && rolldown -c && tsc -p tsconfig.dist.json",
+    "build": "rolldown -c && tsc -p tsconfig.dist.json",
     "format:check": "oxfmt --check",
     "format:write": "oxfmt",
     "lint:check": "oxlint",
