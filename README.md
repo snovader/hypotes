@@ -238,7 +238,6 @@ that calls `vi.mock()`, as Vitest's transform does, but:
   Vitest's don't: mocking `node:fs` changes what a CommonJS dependency gets
   from `require('node:fs')`. `require()` of a mocked CommonJS package returns
   the mock's namespace, `{ default }`, rather than its default export.
-- A mock can't stand in for a package that isn't installed, as Vitest's can.
 
 ## Failure output
 
