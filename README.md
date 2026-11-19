@@ -193,8 +193,8 @@ it, apart from the differences below.
   `it('name', { timeout: 100 }, fn)`. A timeout alone can follow it, as in
   `it('name', fn, 100)`.
 - `beforeAll`, `afterAll`, `beforeEach` and `afterEach`.
-- `expect`, with Vitest's matchers and asymmetric matchers, `expect.extend()`
-  and `expect.addEqualityTesters()`.
+- `expect`, with Vitest's matchers and asymmetric matchers,
+  `expect.extend()`, `expect.addEqualityTesters()` and `expect.fail()`.
 - `vi`, with these members: `fn`, `spyOn`, `mocked`, `isMockFunction`,
   `clearAllMocks`, `resetAllMocks`, `restoreAllMocks`, `mock`, `unmock`,
   `doMock`, `doUnmock`, `hoisted` and `importActual`.
@@ -244,12 +244,11 @@ in another form. Of `vi`, hypotes has only the members that
 | `it.concurrent`, `describe.concurrent`                                            | The `concurrency` option, as in `describe('name', { concurrency: true }, fn)` |
 | `it.sequential`, `describe.sequential`                                            | None: a file's tests run one at a time, unless `concurrency` says otherwise   |
 | `it.fails`, `it.extend`, `describe.shuffle`                                       | None                                                                          |
-| `.each` with a table in a template literal                                        | `.each()` with an array of objects                                            |
 | The `retry`, `repeats` and `tags` options                                         | None                                                                          |
 | `onTestFinished`                                                                  | `t.after()`, on node:test's context                                           |
 | `onTestFailed`, `aroundEach`, `aroundAll`, `inject`                               | None                                                                          |
 | `expect.soft`, `expect.poll`, `expect.assertions`, `expect.hasAssertions`         | None                                                                          |
-| `expect.unreachable`                                                              | `assert.fail()`, from `node:assert`                                           |
+| `expect.unreachable`                                                              | `expect.fail()`                                                               |
 | `toMatchSnapshot` and the other snapshot matchers, `expect.addSnapshotSerializer` | node:test's `t.assert.snapshot()`                                             |
 | `expectTypeOf`, `assertType`                                                      | The `expect-type` package, which Vitest's `expectTypeOf` comes from           |
 | `assert`, `chai`, `should`                                                        | The `chai` package, which Vitest's come from                                  |
@@ -279,10 +278,6 @@ in another form. Of `vi`, hypotes has only the members that
 - **Timeouts.** A test or a hook has no timeout unless it's given one. Vitest
   fails a test after 5 seconds, and a hook after 10. Node's `--test-timeout`
   sets one for every test.
-- **Options after the function.** hypotes also takes a test's options after
-  its function, as in `it('name', fn, { skip: true })`. Vitest 4 removed
-  that form, and throws for it. Write the options before the function in a
-  file that runs on both.
 
 ### Equality
 
