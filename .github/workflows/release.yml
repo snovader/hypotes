@@ -1,0 +1,74 @@
+name: Release
+
+# Publishes the package to npm when a release is published on GitHub, whose
+# tag names the version in package.json, as v1.2.3, once CI's checks pass on
+# the tag. npm's trusted publishing authenticates the job, rather than a
+# token, and the package carries the provenance of its build.
+
+on:
+  release:
+    types:
+      - published
+
+# Read-only, unless a job asks for more
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Check the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout GitHub repo
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check that the tag names the version in package.json
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::The tag $TAG doesn't name version $version from package.json, whose tag is v$version"
+            exit 1
+          fi
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+
+  ci:
+    name: CI
+    needs: version
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Which npm's trusted publisher can name, and whose protection rules can
+    # restrict publishing to the release tags
+    environment: npm
+    permissions:
+      contents: read
+      # For trusted publishing, and to sign the provenance
+      id-token: write
+    steps:
+      - name: Checkout GitHub repo
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Prepare dependencies
+        uses: ./.github/actions/prepare-node-dependencies
+
+      # `prepack` builds the package. With no npmAuthToken configured, Yarn
+      # exchanges the job's OIDC token for one that publishes the package.
+      - name: Publish to npm
+        run: yarn npm publish --provenance --tag "$DIST_TAG"
+        env:
+          # A pre-release on GitHub goes under `next`, so that installing the
+          # package without a version still gets the latest release
+          DIST_TAG: ${{ github.event.release.prerelease && 'next' || 'latest' }}
+          # npm's registry itself, rather than registry.yarnpkg.com, Yarn's
+          # default, which proxies it
+          YARN_NPM_PUBLISH_REGISTRY: https://registry.npmjs.org

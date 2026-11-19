@@ -25,5 +25,11 @@
         "useDefineForClassFields": true,
         "verbatimModuleSyntax": true
     },
-    "include": ["source", "test", "lint", "*.config.ts"]
+    "include": [
+        "source",
+        "test",
+        "lint",
+        "scripts",
+        "*.config.ts"
+    ]
 }

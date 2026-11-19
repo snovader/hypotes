@@ -4,10 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'hypotes';
 import { fc, it as property } from 'hypotes/fast-check';
 import data from './fixtures/data.json' with { type: 'json' };
 import * as partial from './fixtures/partial.ts';
+import { missing } from './fixtures/uses-package.ts';
 import { quadruple } from './fixtures/uses.ts';
 import original, * as values from './fixtures/values.ts';
 
-const spies = vi.hoisted(() => ({ double: vi.fn((value: number) => value * 3) }));
+const spies = vi.hoisted(() => ({ double: vi.fn<(value: number) => number>(value => value * 3) }));
 const { label } = await vi.hoisted(async () => ({ label: await Promise.resolve('mocked') }));
 
 vi.mock('./fixtures/values.ts', () => ({ default: label, double: spies.double, one: 2 }));
@@ -18,6 +19,22 @@ vi.mock(import('./fixtures/partial.ts'), async importOriginal => ({
 vi.mock('querystring', () => ({ escape: (text: string) => `escaped ${text}` }));
 vi.mock('node:path', () => ({ sep: 'mocked' }));
 vi.unmock('path');
+vi.mock('not-installed-package', () => ({ missing: 'mocked' }));
+
+/** A name of a package, or a path within one */
+const word = fc.stringMatching(/^[a-z][a-z0-9-]{0,8}$/u);
+
+/** A package that isn't installed, or an import that isn't defined */
+const unresolved = fc.oneof(
+    fc.tuple(fc.option(word), word, fc.option(word)).map(packageSpecifier),
+    word.map(name => `#not-defined-${name}`)
+);
+
+/** The specifier of a package that isn't installed, or a path within it */
+function packageSpecifier([scope, name, subpath]: [string | null, string, string | null]): string {
+    const specifier = scope === null ? `not-installed-${name}` : `@not-installed-${scope}/${name}`;
+    return subpath === null ? specifier : `${specifier}/${subpath}`;
+}
 
 describe('vi.mock', () => {
     it("should give the module's imports the factory's exports", () => {
@@ -45,6 +62,10 @@ describe('vi.mock', () => {
         expect(escape('a')).toBe('escaped a');
     });
 
+    it("should mock a package that isn't installed, for the modules that import it", () => {
+        expect(missing).toBe('mocked');
+    });
+
     it('should type a mocked import as its mock, with vi.mocked', () => {
         vi.mocked(values.double).mockReturnValueOnce(10);
 
@@ -53,7 +74,7 @@ describe('vi.mock', () => {
     });
 
     it("should reject a module whose vi isn't from hypotes, since its mocks would come first", async () => {
-        const error: unknown = await import('./fixtures/foreignVi.ts').catch(
+        const error: unknown = await import('./fixtures/foreign-vi.ts').catch(
             (error: unknown) => error
         );
 
@@ -74,7 +95,7 @@ describe('vi.mock', () => {
     });
 
     it('should reject a module that exports every export of another, which would load first', async () => {
-        const error: unknown = await import('./fixtures/exportsAll.ts').catch(
+        const error: unknown = await import('./fixtures/exports-all.ts').catch(
             (error: unknown) => error
         );
 
@@ -100,6 +121,12 @@ describe('vi.mock', () => {
     it('should leave the original to vi.importActual', async () => {
         const actual = await vi.importActual('./fixtures/values.ts');
         expect([actual.default, actual.one]).toEqual(['original', 1]);
+    });
+
+    it("should reject the original of a package that isn't installed", async () => {
+        await expect(vi.importActual('not-installed-package')).rejects.toThrow(
+            "Cannot import the original of 'not-installed-package'"
+        );
     });
 
     it('should find the calls that take type arguments, in a module with no others', async () => {
@@ -179,14 +206,28 @@ describe('vi.doMock', () => {
         expect(value()).toBe('kept');
     });
 
-    it("should mock a file that isn't there, until the mock ends", async () => {
+    property.prop([unresolved])(
+        "should mock a package that isn't installed, or an import that isn't defined, until the mock ends",
+        async specifier => {
+            const before: unknown = await import(specifier).catch((error: unknown) => error);
+            const mocked = vi.doMock(specifier, () => ({ value: specifier }));
+            const during = (await import(specifier)) as { value: string };
+            mocked[Symbol.dispose]();
+            const after: unknown = await import(specifier).catch((error: unknown) => error);
+
+            expect(before).toBeInstanceOf(Error);
+            expect(during.value).toBe(specifier);
+            expect(after).toEqual(before);
+        }
+    );
+
+    it("should leave a file that isn't there to fail to import, as Vitest does", async () => {
         const path = './fixtures/missing.ts';
         const mocked = vi.doMock(path, () => ({ value: 'mocked' }));
-        const during = (await import(path)) as { value: string };
+        const error: unknown = await import(path).catch((error: unknown) => error);
         mocked[Symbol.dispose]();
 
-        expect(during.value).toBe('mocked');
-        await expect(import(path)).rejects.toThrow('Cannot find module');
+        expect(error).toMatchObject({ code: 'ERR_MODULE_NOT_FOUND' });
     });
 
     property.prop([fc.dictionary(fc.string(), fc.anything())])(
@@ -214,6 +255,17 @@ describe('vi.doMock', () => {
         expect((error as Error).cause).toEqual(new Error('factory'));
     });
 
+    it("should name a package that isn't installed in the error of its mock's factory", async () => {
+        const specifier = 'not-installed-package/failing';
+        const mocked = vi.doMock(specifier, () => {
+            throw new Error('factory');
+        });
+        const error: unknown = await import(specifier).catch((error: unknown) => error);
+        mocked[Symbol.dispose]();
+
+        expect(String(error)).toContain(`The factory of the mock of ${specifier} failed`);
+    });
+
     it("should reject the module's import if the factory returns no object", async () => {
         vi.doMock('./fixtures/later.ts', () => 'exports' as never);
 
@@ -232,6 +284,14 @@ describe('vi.doMock', () => {
         const { doMock } = vi;
         expect(() => doMock('./fixtures/later.ts', () => ({}))).toThrow(TypeError);
     });
+
+    property.prop([fc.stringMatching(/^[A-Za-z]:[\\/][\w\\/.-]*$/u)])(
+        'should throw for a Windows path, which parses as a URL whose scheme is its drive',
+        path => {
+            const { doMock } = vi;
+            expect(() => doMock(path, () => ({}))).toThrow(TypeError);
+        }
+    );
 
     it('should throw without a factory, since hypotes mocks exports only from one', () => {
         const doMock = vi.doMock as unknown as (path: string) => Disposable;

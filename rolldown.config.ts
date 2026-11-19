@@ -23,11 +23,17 @@ function isExternal(id: string): boolean {
 export default defineConfig({
     input: {
         index: join(import.meta.dirname, 'source/index.ts'),
-        fastCheck: join(import.meta.dirname, 'source/fastCheck.ts'),
+        'fast-check': join(import.meta.dirname, 'source/fast-check.ts'),
         'oxlint/index': join(import.meta.dirname, 'source/oxlint/index.ts'),
         register: join(import.meta.dirname, 'source/register.ts')
     },
     platform: 'node',
     external: isExternal,
-    output: { dir: join(import.meta.dirname, 'dist'), format: 'esm' }
+    output: {
+        dir: join(import.meta.dirname, 'dist'),
+        format: 'esm',
+        // Empties it first, as `rm -rf dist` would, which Yarn's shell runs
+        // from the system, and Windows doesn't have
+        cleanDir: true
+    }
 });

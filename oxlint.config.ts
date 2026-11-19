@@ -94,6 +94,29 @@ export default defineConfig({
         'import/no-empty-named-blocks': 'error',
         'import/no-mutable-exports': 'error',
         'unicorn/prefer-node-protocol': 'error',
+        // Files are named in kebab-case, whatever they export, so that an
+        // import path reads the same on file systems that ignore case
+        'unicorn/filename-case': ['error', { case: 'kebabCase' }],
+        // A module in a parent directory is imported by a private path of
+        // package.json's `imports`, such as `#source/title`, rather than by
+        // `../`
+        'import/no-relative-parent-imports': 'error',
+        // An entry point is imported by the name that package.json's
+        // `exports` give it, such as `hypotes/fast-check`, which names the
+        // bundle when the tests run on it, and which `vi` has to come from
+        // to be hoisted
+        'eslint/no-restricted-imports': [
+            'error',
+            {
+                patterns: [
+                    {
+                        regex: '^#source/(index|fast-check|register|oxlint/index)$',
+                        message:
+                            'Import an entry point by the name that the package exports it under.'
+                    }
+                ]
+            }
+        ],
         // Named imports list functions and values whose names start in lower
         // case, then classes and constants, then types, each in natural order:
         // `SIZEOF_8` before `SIZEOF_16`
@@ -127,9 +150,22 @@ export default defineConfig({
         'hypotes/expect-expect': 'error',
         'hypotes/no-standalone-expect': 'error',
         'hypotes/valid-expect': 'error',
+        'hypotes/valid-expect-in-promise': 'error',
+        'hypotes/require-to-throw-message': 'error',
         // `toBe` compares with Object.is, which tells -0 from 0
         'hypotes/prefer-to-be': 'error',
         'hypotes/prefer-to-have-length': 'error',
+        // Every test runs, declared unconditionally, with a valid title, and
+        // describe blocks declare them in functions written in place
+        'hypotes/no-focused-tests': 'error',
+        'hypotes/no-disabled-tests': 'error',
+        'hypotes/warn-todo': 'error',
+        'hypotes/no-conditional-tests': 'error',
+        'hypotes/valid-title': 'error',
+        'hypotes/valid-describe-callback': 'error',
+        // Mocks are typed, and hoisted from where they're written
+        'hypotes/require-mock-type-parameters': 'error',
+        'hypotes/hoisted-apis-on-top': 'error',
 
         // Turned off
 
@@ -203,6 +239,25 @@ export default defineConfig({
             rules: {
                 'typescript/strict-void-return': 'off',
                 'unicorn/no-new-array': 'off'
+            }
+        },
+        {
+            // Fixtures declare tests that are focused, skipped and to do, whose
+            // results the tests check
+            files: ['test/fixtures/**'],
+            rules: {
+                'hypotes/no-focused-tests': 'off',
+                'hypotes/no-disabled-tests': 'off',
+                'hypotes/warn-todo': 'off'
+            }
+        },
+        {
+            // Fixtures that call vi.mock() and vi.hoisted() where
+            // hypotes/register rejects them, at the positions that the tests
+            // check
+            files: ['test/fixtures/declares.ts', 'test/fixtures/nested.ts'],
+            rules: {
+                'hypotes/hoisted-apis-on-top': 'off'
             }
         },
         {

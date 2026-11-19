@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'hypotes';
-import { formatTitle } from '../source/title.ts';
+import { formatTitle } from '#source/title';
 
 // Each title is the one that Vitest 5.1's runner formats, quirks and all: it
 // signs a `%f` by the value at the `%f`'s own position among the `%f`s, and

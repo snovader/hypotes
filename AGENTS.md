@@ -150,6 +150,14 @@ intent, not a requirement to preserve every detail.
 - Test the public API, not the implementation. Assert what a caller can
   observe, such as the results it gets and the errors raised. Do not assert
   private state or which code path ran.
+- Import what a test tests by the name that the package exports it under,
+  as `hypotes` or `hypotes/fast-check`, which `yarn test:dist` runs on the
+  bundle. Import what the package doesn't export by its private path, as
+  `test/title.test.ts` imports `#source/title`. A private path names the
+  source in both runs, so under `yarn test:dist` it loads a second copy of
+  the module beside the bundle's. That suits a module without state, such as
+  `equals.ts`; test one that holds state, such as `tests.ts` or `mocks.ts`,
+  through the exports.
 - Prefer property tests, with fast-check.
 - Use generic shapes in examples and tests, rather than the formats of any one
   application.
@@ -187,15 +195,36 @@ intent, not a requirement to preserve every detail.
   one of them has it. `engines` starts at 24.13.1, where
   `module.registerHooks`, which `hypotes/register` builds on, became a
   release candidate.
+- The package runs on Linux, macOS, and Windows, where CI tests it. Build
+  paths with `node:path` and `node:url`, and keep in mind that a Windows
+  path, such as `C:\a.ts`, parses as a URL. Yarn runs the scripts in
+  `package.json` in its own shell, the same on each, but runs commands such
+  as `rm` from the system, which Windows doesn't have, so do such steps in
+  Node or in a tool's configuration, as `rolldown.config.ts` empties
+  `dist/`.
 - Node runs the TypeScript source as it is, by stripping its types, so use
   only erasable syntax, and import relative modules with their `.ts`
   extensions.
+- Import a module in the same directory, or in one below it, by its relative
+  path, as `./site.ts`. Import one in a parent directory by a private path
+  of package.json's `imports`, as `#source/site` or `#test/rule-tester`,
+  rather than by `../`. A private path leaves out the extension, which
+  `imports` adds: tsc rewrites the extensions of relative paths only, and
+  rejects any other that ends in `.ts` where it writes declarations. Import
+  an entry point by the name that the package exports it under, as
+  `hypotes/oxlint`, not by its private path. oxlint checks each of these.
+- Name TypeScript and JavaScript files and their folders in kebab-case, as
+  `rule-tester.ts`, whatever they export. oxlint checks the files' names.
 - `yarn build` bundles each entry point into `dist/` with rolldown, with the
   modules that entry points share in a chunk, and tsc writes the
   declarations. In this repository, the package's exports name the source, or
   the bundle with the `hypotes-dist` condition, which `yarn test:dist` runs
   the tests on; the published package's, in `publishConfig`, name the bundle.
-  A new entry point goes in `rolldown.config.ts` and in both exports.
+  A new entry point goes in `rolldown.config.ts`, in both exports, and in
+  the pattern of oxlint's `no-restricted-imports`.
+- rolldown resolves the private paths as it bundles, so the bundle has none,
+  but tsc keeps them in the declarations. The `imports` of `publishConfig`
+  name the declarations in `dist/` for those, and nothing to run.
 - The runtime dependencies are Vitest's packages, and tinyrainbow, which
   they colour messages with, in the range that they require: `expect.ts`
   turns off the colours of the copy that they load. fast-check, oxlint,
@@ -220,4 +249,20 @@ intent, not a requirement to preserve every detail.
   which builds the package and runs the tests on the bundle, with the
   bundle's `hypotes/register`.
   `.github/workflows/ci.yml` runs the same checks in CI, and the tests on each
-  supported version of Node.
+  supported version of Node on Ubuntu, and on the oldest and the latest on
+  macOS and Windows.
+
+### Releasing
+
+- A release on GitHub publishes the package. Set `version` in
+  `package.json` in a pull request, then publish a release whose tag names
+  it, as `v1.2.3`. `.github/workflows/release.yml` checks that the tag
+  names the version, runs `ci.yml` on the tag, and publishes with
+  `yarn npm publish`, through npm's trusted publishing, with provenance. A
+  release marked as a pre-release goes under npm's `next` tag, and others
+  under `latest`. The repository's rules keep `v*` tags from being moved or
+  deleted, so a release that went wrong takes a new version.
+- Pack and publish only with Yarn, which replaces the exports with those of
+  `publishConfig`. npm keeps the source's, which the package leaves out, so
+  `prepack` fails under any other package manager, in
+  `scripts/require-yarn.ts`.
