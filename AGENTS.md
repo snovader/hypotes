@@ -235,6 +235,44 @@ intent, not a requirement to preserve every detail.
   file that doesn't mock modules doesn't load them. The bundle imports the
   dependencies and peer dependencies rather than including them.
 
+## Documentation
+
+- `README.md` is for the package's users, and is published with it. It says
+  what hypotes is and when to use it, how to start, what each entry point
+  has, what's left out of Vitest's API, and where behaviour differs. This
+  file is for those who change the package. Keep each fact in one of them.
+- Lead with the common case. The quick start is the shortest path to a
+  passing test: install, a test file, `node --test`, and its output. Introduce
+  what only some users need where they need it, as the preload
+  `hypotes/register` comes with module mocks, not with the first command.
+- Give steps in the order that a reader takes them. Name the file that a
+  sample goes in, and show a command's output where it tells the reader
+  that the step worked.
+- Say why, not only what. A reader chooses between hypotes, Vitest, and
+  node:test alone, so say what each choice costs. Don't retell the source:
+  describe what a caller does and sees.
+- Write short sentences, one idea in each. Two sentences read better than
+  one with a chain of clauses, and a list or a table better than a long
+  sentence of alternatives. Use numbered steps for a procedure, and a table
+  for what a reader looks up. Leave out emoji, praise of the package, and
+  sections that say nothing a reader needs.
+- State only what was checked. Run every sample and command before
+  committing it, on the built package, in a project outside the repository.
+  Check a claim about Vitest's behaviour on Vitest. The samples pass the
+  README's own oxlint configuration. Say in the pull request what was run,
+  and what wasn't.
+- A change to what the package exports changes the README in the same
+  change: a new member, modifier, entry point, or lint rule, something left
+  out, or a difference from Vitest. `test/readme.test.ts` compares the
+  README's lists of lint rules and of `vi`'s members with the package's.
+  Where the README names things one by one, add such a check for the list.
+- Link to Vitest's and Node's documentation for what they document, rather
+  than restating it.
+- Don't add other documentation files, such as a changelog or a
+  contributing guide, unless asked to.
+- oxfmt ignores Markdown, so wrap prose at 80 columns by hand, and align
+  the columns of tables.
+
 ## Formatting
 
 - Follow the formatter and compiler configurations. oxfmt sets four-space
