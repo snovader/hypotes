@@ -82,9 +82,9 @@
     "lint:check": "oxlint",
     "lint:write": "oxlint --fix",
     "prepack": "node scripts/require-yarn.ts && yarn build",
-    "test": "node --import hypotes/register --test 'test/**/*.test.ts' 'lint/*.test.ts'",
+    "test": "node --import hypotes/register --test 'test/**/*.test.ts'",
     "test:dist": "yarn build && NODE_OPTIONS=--conditions=hypotes-dist yarn test",
-    "test:watch": "node --import hypotes/register --test --watch 'test/**/*.test.ts' 'lint/*.test.ts'",
+    "test:watch": "node --import hypotes/register --test --watch 'test/**/*.test.ts'",
     "typecheck": "tsc -p ."
   },
   "dependencies": {
@@ -114,6 +114,8 @@
     }
   },
   "devDependencies": {
+    "@snovader/oxc-config": "^0.1.0",
+    "@snovader/tsconfig": "^0.1.0",
     "@types/node": "^26.6.6",
     "fast-check": "^4.10.2",
     "magic-string": "^1.4.5",
