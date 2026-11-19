@@ -94,6 +94,9 @@ export default defineConfig({
         'import/no-empty-named-blocks': 'error',
         'import/no-mutable-exports': 'error',
         'unicorn/prefer-node-protocol': 'error',
+        // Files are named in kebab-case, whatever they export, so that an
+        // import path reads the same on file systems that ignore case
+        'unicorn/filename-case': ['error', { case: 'kebabCase' }],
         // A module in a parent directory is imported by a private path of
         // package.json's `imports`, such as `#source/title`, rather than by
         // `../`
@@ -107,7 +110,7 @@ export default defineConfig({
             {
                 patterns: [
                     {
-                        regex: '^#source/(index|fastCheck|register|oxlint/index)$',
+                        regex: '^#source/(index|fast-check|register|oxlint/index)$',
                         message:
                             'Import an entry point by the name that the package exports it under.'
                     }

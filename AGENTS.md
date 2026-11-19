@@ -207,12 +207,14 @@ intent, not a requirement to preserve every detail.
   extensions.
 - Import a module in the same directory, or in one below it, by its relative
   path, as `./site.ts`. Import one in a parent directory by a private path
-  of package.json's `imports`, as `#source/site` or `#test/ruleTester`,
+  of package.json's `imports`, as `#source/site` or `#test/rule-tester`,
   rather than by `../`. A private path leaves out the extension, which
   `imports` adds: tsc rewrites the extensions of relative paths only, and
   rejects any other that ends in `.ts` where it writes declarations. Import
   an entry point by the name that the package exports it under, as
   `hypotes/oxlint`, not by its private path. oxlint checks each of these.
+- Name TypeScript and JavaScript files and their folders in kebab-case, as
+  `rule-tester.ts`, whatever they export. oxlint checks the files' names.
 - `yarn build` bundles each entry point into `dist/` with rolldown, with the
   modules that entry points share in a chunk, and tsc writes the
   declarations. In this repository, the package's exports name the source, or
@@ -263,4 +265,4 @@ intent, not a requirement to preserve every detail.
 - Pack and publish only with Yarn, which replaces the exports with those of
   `publishConfig`. npm keeps the source's, which the package leaves out, so
   `prepack` fails under any other package manager, in
-  `scripts/requireYarn.ts`.
+  `scripts/require-yarn.ts`.
