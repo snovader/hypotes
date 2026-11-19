@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'hypotes';
 import { fc, it as property } from 'hypotes/fast-check';
 import data from './fixtures/data.json' with { type: 'json' };
 import * as partial from './fixtures/partial.ts';
+import { missing } from './fixtures/uses-package.ts';
 import { quadruple } from './fixtures/uses.ts';
-import { missing } from './fixtures/usesPackage.ts';
 import original, * as values from './fixtures/values.ts';
 
 const spies = vi.hoisted(() => ({ double: vi.fn<(value: number) => number>(value => value * 3) }));
@@ -74,7 +74,7 @@ describe('vi.mock', () => {
     });
 
     it("should reject a module whose vi isn't from hypotes, since its mocks would come first", async () => {
-        const error: unknown = await import('./fixtures/foreignVi.ts').catch(
+        const error: unknown = await import('./fixtures/foreign-vi.ts').catch(
             (error: unknown) => error
         );
 
@@ -95,7 +95,7 @@ describe('vi.mock', () => {
     });
 
     it('should reject a module that exports every export of another, which would load first', async () => {
-        const error: unknown = await import('./fixtures/exportsAll.ts').catch(
+        const error: unknown = await import('./fixtures/exports-all.ts').catch(
             (error: unknown) => error
         );
 

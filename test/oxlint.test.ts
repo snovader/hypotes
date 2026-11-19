@@ -1,5 +1,5 @@
 import plugin from 'hypotes/oxlint';
-import { tester } from './ruleTester.ts';
+import { tester } from './rule-tester.ts';
 
 // What the rules recognize: tests, describe blocks, expect() and vi from
 // hypotes, and tests with `prop` from its fast-check subpath

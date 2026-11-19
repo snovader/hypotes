@@ -34,8 +34,8 @@
       "default": "./source/index.ts"
     },
     "./fast-check": {
-      "hypotes-dist": "./dist/fastCheck.js",
-      "default": "./source/fastCheck.ts"
+      "hypotes-dist": "./dist/fast-check.js",
+      "default": "./source/fast-check.ts"
     },
     "./oxlint": {
       "hypotes-dist": "./dist/oxlint/index.js",
@@ -57,8 +57,8 @@
         "default": "./dist/index.js"
       },
       "./fast-check": {
-        "types": "./dist/fastCheck.d.ts",
-        "default": "./dist/fastCheck.js"
+        "types": "./dist/fast-check.d.ts",
+        "default": "./dist/fast-check.js"
       },
       "./oxlint": {
         "types": "./dist/oxlint/index.d.ts",
@@ -81,7 +81,7 @@
     "format:write": "oxfmt",
     "lint:check": "oxlint",
     "lint:write": "oxlint --fix",
-    "prepack": "node scripts/requireYarn.ts && yarn build",
+    "prepack": "node scripts/require-yarn.ts && yarn build",
     "test": "node --import hypotes/register --test 'test/**/*.test.ts' 'lint/*.test.ts'",
     "test:dist": "yarn build && NODE_OPTIONS=--conditions=hypotes-dist yarn test",
     "test:watch": "node --import hypotes/register --test --watch 'test/**/*.test.ts' 'lint/*.test.ts'",
