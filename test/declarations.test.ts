@@ -114,11 +114,19 @@ describe('declarations', () => {
         'each passes row 1 whole unless every row is an array',
         'each names a with -0',
         'for passes [1, 2] whole, and the context',
+        'each takes a table, 1 + 2 is 3',
+        'each takes a table, 2 + 3 is 5',
+        'for takes a table, x',
+        'each takes the strings of a template without values as rows, 0',
         'skipIf runs if false',
         'runIf runs if true',
         'test is it',
         'describe.each A',
         'declares tests in the suite',
+        'describe.each takes a table, B',
+        'declares tests in the suite of the row',
+        'describe.for takes a table, C',
+        'declares tests in the suite of the whole row',
         'hooks',
         'hooks run in the order that node:test runs them',
         'vi.fn records calls for the matchers',
@@ -163,6 +171,7 @@ describe('declarations', () => {
 
     it.each([
         ['each spreads 1 and a', "])('each spreads %i and %s'"],
+        ['each takes a table, 1 + 2 is 3', "`('each takes a table, $a + $b is $sum'"],
         ['skip skips', "it.skip('skip skips'"],
         ['test is it', "test('test is it'"],
         ['prop takes parameters', 'property.prop([fc.nat()], { numRuns: 7 })(']

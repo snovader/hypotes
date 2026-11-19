@@ -1,8 +1,10 @@
 // Tests and suites, declared through node:test with Vitest's API: `.each`,
-// `.for`, `.skipIf` and `.runIf`, and test options after the function.
+// `.for`, with rows in an array or a table in a template literal, `.skipIf`
+// and `.runIf`, and test options after the function.
 import * as nodeTest from 'node:test';
 import { toArray } from '@vitest/utils/helpers';
 import { callerSite, callFrom, type Site } from './site.ts';
+import { parseTable } from './table.ts';
 import { formatTitle } from './title.ts';
 
 type Awaitable<T> = PromiseLike<T> | T;
@@ -43,26 +45,44 @@ export interface Declare<Fn> {
 }
 
 /**
+ * A row of a table in a template literal, whose columns only the template's
+ * text names. Its values are typed as any, as Vitest types them, so that a
+ * function can destructure them, or declare their types.
+ */
+// oxlint-disable-next-line typescript/no-explicit-any -- TypeScript can't read the columns from the template
+export type TableRow = any;
+
+/**
  * Declares a test or a suite for each row, which `formatTitle` names. Its
  * function takes the row's values, if every row is an array, and otherwise
  * the row. A readonly row's values are spread into parameters, which can't be
- * readonly.
+ * readonly. The rows of a table in a template literal are objects.
  */
 export interface Each<Result> {
     <Row extends readonly unknown[] | [unknown]>(
         rows: readonly Row[]
     ): Declare<(...values: [...Row]) => Result>;
     <Row>(rows: readonly Row[]): Declare<(row: Row) => Result>;
+    (
+        strings: TemplateStringsArray,
+        ...values: unknown[]
+    ): Declare<(row: TableRow) => Result>;
 }
 
 /**
  * Declares a test or a suite for each row, which `formatTitle` names. Its
  * function takes the row, whether or not it's an array, and a test's
- * context.
+ * context. The rows of a table in a template literal are objects.
  */
-export type For<Context extends unknown[]> = <Row>(
-    rows: readonly Row[]
-) => Declare<(row: Row, ...context: Context) => Awaitable<unknown>>;
+export interface For<Context extends unknown[]> {
+    <Row>(
+        rows: readonly Row[]
+    ): Declare<(row: Row, ...context: Context) => Awaitable<unknown>>;
+    (
+        strings: TemplateStringsArray,
+        ...values: unknown[]
+    ): Declare<(row: TableRow, ...context: Context) => Awaitable<unknown>>;
+}
 
 /** The variants of a test or a suite, which apply to any combination */
 export interface Modifiers<API> {
@@ -175,12 +195,33 @@ function createAPI<Fn>(
     });
 }
 
+/**
+ * The rows that `.each` or `.for` declares, from what it's called with: a
+ * table's, if values follow the cases, as a template literal's follow its
+ * strings, and otherwise the cases themselves. As in Vitest, the strings of a
+ * template literal without values are its rows.
+ */
+function rowsOf(
+    cases: readonly unknown[],
+    values: readonly unknown[]
+): readonly unknown[] {
+    return values.length > 0
+        ? parseTable(cases as readonly string[], values)
+        : cases;
+}
+
 /** `.each`: spreads the rows if every row is an array */
 function each<Fn>(
     define: Define<Fn>
-): (rows: readonly unknown[]) => Declare<Fn> {
-    return rows =>
-        (name: string, first?: Argument<Fn>, second?: Argument<Fn>): void => {
+): (cases: readonly unknown[], ...values: unknown[]) => Declare<Fn> {
+    return (cases, ...values) => {
+        const rows = rowsOf(cases, values);
+
+        return (
+            name: string,
+            first?: Argument<Fn>,
+            second?: Argument<Fn>
+        ): void => {
             const site = callerSite();
             const { fn, options } = parseArguments(first, second);
             const handler = fn as
@@ -189,22 +230,29 @@ function each<Fn>(
             const spread = rows.every(row => Array.isArray(row));
 
             for (const [index, row] of rows.entries()) {
-                const values: unknown[] = Array.isArray(row) ? row : [row];
-                const title = formatTitle(name, values, index);
+                const items: unknown[] = Array.isArray(row) ? row : [row];
+                const title = formatTitle(name, items, index);
                 const run = (): unknown =>
-                    spread ? handler?.(...values) : handler?.(row);
+                    spread ? handler?.(...items) : handler?.(row);
 
                 define(title, options, handler && (run as Fn), site);
             }
         };
+    };
 }
 
 /** `.for`: passes each row whole, and a test's context after it */
 function forEach<Fn>(
     define: Define<Fn>
-): (rows: readonly unknown[]) => Declare<Fn> {
-    return rows =>
-        (name: string, first?: Argument<Fn>, second?: Argument<Fn>): void => {
+): (cases: readonly unknown[], ...values: unknown[]) => Declare<Fn> {
+    return (cases, ...values) => {
+        const rows = rowsOf(cases, values);
+
+        return (
+            name: string,
+            first?: Argument<Fn>,
+            second?: Argument<Fn>
+        ): void => {
             const site = callerSite();
             const { fn, options } = parseArguments(first, second);
             const handler = fn as
@@ -219,6 +267,7 @@ function forEach<Fn>(
                 define(title, options, handler && (run as Fn), site);
             }
         };
+    };
 }
 
 /** Declares a test through node:test, which awaits it */

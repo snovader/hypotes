@@ -42,6 +42,28 @@ it.for([[1, 2]])(
     }
 );
 
+it.each`
+    a    | b    | sum
+    ${1} | ${2} | ${3}
+    ${2} | ${3} | ${5}
+`('each takes a table, $a + $b is $sum', ({ a, b, sum }) => {
+    expect(a + b).toBe(sum);
+});
+
+it.for`
+    value
+    ${'x'}
+`('for takes a table, $value', (row, context) => {
+    expect(row).toEqual({ value: 'x' });
+    expect(context.name).toBe('for takes a table, x');
+});
+
+it.each`
+    a | b
+`('each takes the strings of a template without values as rows, %#', row => {
+    expect(row).toBe('\n    a | b\n');
+});
+
 it.skip('skip skips', () => {
     expect('ran').toBe('skipped');
 });
@@ -90,6 +112,24 @@ test('test is it', () => {
 describe.each(['A'])('describe.each %s', name => {
     it('declares tests in the suite', () => {
         expect(name).toBe('A');
+    });
+});
+
+describe.each`
+    name
+    ${'B'}
+`('describe.each takes a table, $name', ({ name }) => {
+    it('declares tests in the suite of the row', () => {
+        expect(name).toBe('B');
+    });
+});
+
+describe.for`
+    name
+    ${'C'}
+`('describe.for takes a table, $name', row => {
+    it('declares tests in the suite of the whole row', () => {
+        expect(row).toEqual({ name: 'C' });
     });
 });
 

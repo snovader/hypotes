@@ -28,6 +28,7 @@ tester.run('expect-expect', plugin.rules['expect-expect'], {
         imported("it.prop([arbitrary])('asserts', value => { expect(value).toBe(value); });"),
         imported("it.each([1])('asserts %i', value => { expect(value).toBe(1); });"),
         imported("it.for([1])('asserts %i', (value, context) => { expect(value).toBe(1); });"),
+        imported("it.each`a\n${1}`('asserts $a', ({ a }) => { expect(a).toBe(1); });"),
         imported("it.skipIf(skipped).only('asserts', () => { expect(1).toBe(1); });"),
         imported("it.todo('is to be written');"),
         imported("it('runs a function declared elsewhere', check);"),
@@ -74,6 +75,11 @@ tester.run('expect-expect', plugin.rules['expect-expect'], {
             errors: [{ message: NO_ASSERTION }]
         },
         {
+            name: 'a test of each row of a table in a template literal',
+            code: imported("it.for`a\n${1}`('asserts nothing about $a', row => {});"),
+            errors: [{ message: NO_ASSERTION }]
+        },
+        {
             name: 'a test that runs on a condition',
             code: imported("test.runIf(enabled)('asserts nothing', () => {});"),
             errors: [{ message: NO_ASSERTION }]
@@ -104,6 +110,7 @@ tester.run('no-standalone-expect', plugin.rules['no-standalone-expect'], {
         imported("it('asserts', () => { expect(1).toBe(1); });"),
         imported("it.prop([arbitrary])('asserts', value => { expect(value).toBe(value); });"),
         imported("it.each([1])('asserts %i', value => { expect(value).toBe(1); });"),
+        imported("it.for`a\n${1}`('asserts $a', ({ a }) => { expect(a).toBe(1); });"),
         imported(
             "test('asserts in a callback', () => { [1].forEach(value => { expect(value).toBe(1); }); });"
         ),
@@ -148,6 +155,13 @@ tester.run('no-standalone-expect', plugin.rules['no-standalone-expect'], {
             name: 'an assertion in a describe block of each row',
             code: imported(
                 "describe.each([1])('a block for %i', value => { expect(value).toBe(1); });"
+            ),
+            errors: [{ message: STANDALONE }]
+        },
+        {
+            name: 'an assertion in a describe block of each row of a table',
+            code: imported(
+                "describe.each`a\n${1}`('a block for $a', ({ a }) => { expect(a).toBe(1); });"
             ),
             errors: [{ message: STANDALONE }]
         }
@@ -361,6 +375,23 @@ tester.run('no-focused-tests', plugin.rules['no-focused-tests'], {
             ]
         },
         {
+            name: 'a test of each row of a table',
+            code: imported("it.only.each`a\n${1}`('runs alone with $a', ({ a }) => {});"),
+            errors: [
+                {
+                    message: FOCUSED,
+                    suggestions: [
+                        {
+                            desc: 'Remove .only',
+                            output: imported(
+                                "it.each`a\n${1}`('runs alone with $a', ({ a }) => {});"
+                            )
+                        }
+                    ]
+                }
+            ]
+        },
+        {
             name: 'a test that runs on a condition',
             code: imported("test.runIf(enabled).only('runs alone', () => {});"),
             errors: [
@@ -413,6 +444,15 @@ tester.run('no-disabled-tests', plugin.rules['no-disabled-tests'], {
         {
             name: 'a describe block of each row',
             code: imported("describe.skip.each([1])('a block for %i', value => {});"),
+            errors: [
+                {
+                    message: 'Expected the describe block to run, rather than be skipped with .skip'
+                }
+            ]
+        },
+        {
+            name: 'a describe block of each row of a table',
+            code: imported("describe.skip.for`a\n${1}`('a block for $a', row => {});"),
             errors: [
                 {
                     message: 'Expected the describe block to run, rather than be skipped with .skip'
@@ -560,6 +600,12 @@ tester.run('valid-title', plugin.rules['valid-title'], {
             errors: [{ message: 'Expected the title not to start with test, which declares it' }]
         },
         {
+            name: 'the name of a test for each row of a table',
+            code: imported("test.each`a\n${1}`('test $a', ({ a }) => {});"),
+            output: imported("test.each`a\n${1}`('$a', ({ a }) => {});"),
+            errors: [{ message: 'Expected the title not to start with test, which declares it' }]
+        },
+        {
             name: 'the name alone',
             code: imported("it('it', () => {});"),
             output: null,
@@ -587,6 +633,8 @@ tester.run('valid-describe-callback', plugin.rules['valid-describe-callback'], {
         imported("describe('a block', () => {}, 10);"),
         imported("describe.each([1])('a block for %i', value => {});"),
         imported("describe.for([[1]])('a block for %i', ([value]) => {});"),
+        imported("describe.each`a\n${1}`('a block for $a', ({ a }) => {});"),
+        imported("describe.for`a\n${1}`('a block for $a', row => {});"),
         imported("describe.todo('a block');"),
         imported("describe('a block', { todo: true });"),
         imported("describe('a block', () => { it('returns', () => { return promise; }); });"),
@@ -622,6 +670,13 @@ tester.run('valid-describe-callback', plugin.rules['valid-describe-callback'], {
         {
             name: 'a return statement',
             code: imported("describe('a block', () => { return setUp(); });"),
+            errors: [{ message: RETURNS }]
+        },
+        {
+            name: 'a return statement, for each row of a table',
+            code: imported(
+                "describe.each`a\n${1}`('a block for $a', ({ a }) => { return setUp(a); });"
+            ),
             errors: [{ message: RETURNS }]
         },
         {

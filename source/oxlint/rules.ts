@@ -4,7 +4,8 @@
 // `it` or `test` from hypotes, its fast-check subpath or node:test, and a
 // describe block is a call of `describe` or `suite` from them, through any of
 // their variants, such as `it.only`, and of the functions that `it.each()`,
-// `it.for()`, `it.prop()`, `it.skipIf()` and `it.runIf()` return. An
+// `it.for()`, `it.prop()`, `it.skipIf()` and `it.runIf()` return, and that
+// `it.each` and `it.for` return for a table in a template literal. An
 // assertion is a call of hypotes' `expect`, or, to expect-expect, of any
 // function whose name starts with `expect`, and `vi` is hypotes' `vi`.
 //
@@ -72,6 +73,13 @@ const FACTORIES: ReadonlySet<string> = new Set([
     'runIf',
     'skipIf'
 ]);
+
+/**
+ * Members of `it`, `test`, `describe` and `suite` that return the function
+ * that declares for a table in a template literal, as `` it.each`table` ``
+ * does
+ */
+const TABLE_FACTORIES: ReadonlySet<string> = new Set(['each', 'for']);
 
 /** Members between `expect()` and its matcher */
 const MODIFIERS: ReadonlySet<string> = new Set(['not', 'rejects', 'resolves']);
@@ -302,8 +310,8 @@ function declarationOf(
 
 /**
  * What a call's callee declares through: `it` for `it()`, `it.skip()`,
- * `it.each(rows)()` and `it.skipIf(condition).only()`. It adds the members
- * that it passes to `members`, if given.
+ * `it.each(rows)()`, `` it.each`table`() `` and `it.skipIf(condition).only()`.
+ * It adds the members that it passes to `members`, if given.
  */
 function declarerOf(
     callee: CallExpression['callee'],
@@ -318,6 +326,12 @@ function declarerOf(
         ) {
             members?.push(target.callee);
             target = target.callee.object;
+        } else if (
+            target.type === 'TaggedTemplateExpression' &&
+            isNamedMember(target.tag, TABLE_FACTORIES)
+        ) {
+            members?.push(target.tag);
+            target = target.tag.object;
         } else if (isNamedMember(target, VARIANTS)) {
             members?.push(target);
             target = target.object;
