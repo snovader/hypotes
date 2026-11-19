@@ -279,6 +279,19 @@ intent, not a requirement to preserve every detail.
   indentation, single quotes, semicolons, no trailing commas, and contextual
   line widths. Intentional whitespace and readable structure still require
   judgment after automatic formatting.
+- The formatting, the lint rules, and the compiler's options come from
+  `@snovader/oxc-config` and `@snovader/tsconfig`, which benk and tafla
+  share. `oxfmt.config.ts`, `oxlint.config.ts`, and `tsconfig.json` keep
+  what is particular to hypotes: the paths that they ignore and include, the
+  names that it imports itself by, its rules of imports, and its fixtures'
+  exceptions. Change a shared setting in the packages, rather than
+  overriding it here. `@snovader/oxc-config` needs Node 26 to load, which
+  CI's checks of formatting and lint run on.
+- oxlint loads `hypotes/oxlint` from `source/oxlint`, so that the package's
+  tests are linted with the rules as they're written. The preset
+  `@snovader/oxc-config/oxlint/hypotes` would load the published package
+  instead. `oxlint.config.ts` turns on the same `hypotes/*` rules as that
+  preset, so a rule turned on or off there changes here too.
 
 ## Repository commands
 

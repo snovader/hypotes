@@ -1,35 +1,4 @@
 {
-    "compilerOptions": {
-        "allowImportingTsExtensions": true,
-        "allowUnreachableCode": false,
-        "allowUnusedLabels": false,
-        "erasableSyntaxOnly": true,
-        "forceConsistentCasingInFileNames": true,
-        "isolatedModules": true,
-        "lib": ["ESNext"],
-        "module": "NodeNext",
-        "moduleDetection": "force",
-        "moduleResolution": "NodeNext",
-        "noEmit": true,
-        "noFallthroughCasesInSwitch": true,
-        "noImplicitOverride": true,
-        "noUncheckedSideEffectImports": true,
-        "noUnusedLocals": true,
-        "noUnusedParameters": true,
-        "pretty": true,
-        "resolveJsonModule": true,
-        "skipLibCheck": true,
-        "strict": true,
-        "target": "ESNext",
-        "types": ["node"],
-        "useDefineForClassFields": true,
-        "verbatimModuleSyntax": true
-    },
-    "include": [
-        "source",
-        "test",
-        "lint",
-        "scripts",
-        "*.config.ts"
-    ]
+    "extends": "@snovader/tsconfig/node",
+    "include": ["source", "test", "scripts", "*.config.ts"]
 }

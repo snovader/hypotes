@@ -20,6 +20,11 @@ updates:
           - "oxfmt"
           - "oxlint"
           - "oxlint-tsgolint"
+      # snovader/tooling's configurations, which a change of formatting or of
+      # rules can need in step
+      "snovader":
+        patterns:
+          - "@snovader/*"
       # @vitest/expect requires its own version of @vitest/spy and
       # @vitest/utils, which the runner imports too, and a range of
       # tinyrainbow: expect.ts turns off the colours of the copy that
