@@ -1,5 +1,5 @@
 // Tests and suites, declared through node:test with Vitest's API: `.each`,
-// `.for`, `.skipIf` and `.runIf`, and test options after the function.
+// `.for`, `.skipIf` and `.runIf`, and a timeout after the function.
 import * as nodeTest from 'node:test';
 import { toArray } from '@vitest/utils/helpers';
 import { callerSite, callFrom, type Site } from './site.ts';
@@ -33,9 +33,10 @@ export type TestFunction = (context: TestContext) => Awaitable<unknown>;
 export type SuiteFunction = (context: SuiteContext) => Awaitable<unknown>;
 
 /**
- * Declares a test or a suite, with its options after its function, as
- * Vitest takes them, or before it, as node:test does. A timeout alone can
- * take their place. Without a function, it's to do.
+ * Declares a test or a suite, with its options before its function, as
+ * Vitest and node:test take them, or a timeout alone after it. The options
+ * can follow the function too, which Vitest took until 4, and throws for
+ * now. Without a function, it's to do.
  */
 export interface Declare<Fn> {
     (name: string, fn?: Fn, options?: TestOptions | number): void;

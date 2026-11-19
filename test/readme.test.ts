@@ -23,7 +23,7 @@ function captures(text: string, pattern: RegExp): string[] {
 
 describe('README', () => {
     const rules = Object.keys(plugin.rules).toSorted();
-    const oxlint = section('### `hypotes/oxlint`', '\n### ');
+    const oxlint = section('## Lint rules', '\n## ');
 
     it('configures each rule of hypotes/oxlint', () => {
         expect(captures(oxlint, /"hypotes\/([a-z-]+)":/gu)).toEqual(rules);
