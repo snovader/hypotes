@@ -20,7 +20,6 @@ tester.run('expect-expect', plugin.rules['expect-expect'], {
     valid: [
         imported("it('asserts', () => { expect(1).toBe(1); });"),
         imported("test('asserts', { skip: true }, () => { expect(1).toBe(1); });"),
-        imported("test('asserts', () => { expect(1).toBe(1); }, { timeout: 10 });"),
         imported("it('asserts through a helper', () => { expectOne(1); });"),
         imported(
             "it('asserts in a callback', () => { [1].forEach(value => { expect(value).toBe(1); }); });"
@@ -40,11 +39,6 @@ tester.run('expect-expect', plugin.rules['expect-expect'], {
         {
             name: 'a test that asserts nothing',
             code: imported("it('asserts nothing', () => {});"),
-            errors: [{ message: NO_ASSERTION }]
-        },
-        {
-            name: 'a test with options after its function',
-            code: imported("it('asserts nothing', () => {}, { timeout: 10 });"),
             errors: [{ message: NO_ASSERTION }]
         },
         {
@@ -431,6 +425,9 @@ tester.run('no-disabled-tests', plugin.rules['no-disabled-tests'], {
         imported("it('is to be written', { todo: true });"),
         imported("it.skipIf(skipped)('runs on a condition', () => {});"),
         imported("test('runs', { skip: false }, () => {});"),
+        // Options after the function, which TypeScript rejects, and hypotes
+        // throws for, as Vitest does
+        imported("test('runs', () => {}, { skip: true });"),
         imported("it('runs a function declared elsewhere', check);"),
         // valid-describe-callback reports a describe block without a function
         imported("describe('a block');")

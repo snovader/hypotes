@@ -104,6 +104,29 @@ it('a timeout after the function applies', async () => {
     });
 }, 10);
 
+/** The function of a declaration that throws, which never runs */
+function neverRuns(): void {
+    expect.fail('ran');
+}
+
+// oxlint-disable-next-line hypotes/expect-expect -- Fails by the error of the declaration in it
+it('options after the function throw, as in Vitest 4', () => {
+    // @ts-expect-error -- Options after the function, which Vitest 4 removed
+    it('declares nothing', neverRuns, { timeout: 10 });
+});
+
+// oxlint-disable-next-line hypotes/expect-expect -- Fails by the error of the declaration in it
+it('options after the function of each row throw', () => {
+    // @ts-expect-error -- Options after the function, which Vitest 4 removed
+    it.each([1])('declares nothing for %i', neverRuns, { timeout: 10 });
+});
+
+// oxlint-disable-next-line hypotes/expect-expect -- Fails by the error of the declaration in it
+it('two functions throw, as in Vitest', () => {
+    // @ts-expect-error -- Two functions, of which Vitest takes neither
+    it('declares nothing', neverRuns, neverRuns);
+});
+
 // oxlint-disable-next-line hypotes/valid-title -- Says that `test` is `it`
 test('test is it', () => {
     expect(test).toBe(it);

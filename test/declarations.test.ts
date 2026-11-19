@@ -99,6 +99,10 @@ const [
     resultsOf(COLORS, { colors: true })
 ]);
 
+/** The start of the error that Vitest 4 throws for options after the function */
+const OPTIONS_AFTER_FUNCTION =
+    'TypeError: Signature "test(name, fn, { ... })" was deprecated in Vitest 3 and removed in Vitest 4';
+
 /** The result of the test or suite of the title, which ran */
 function resultOf(title: string): Result {
     const result = results.get(title);
@@ -159,6 +163,9 @@ describe('declarations', () => {
 
     it.each([
         ['a timeout after the function applies', 'timed out after 10ms'],
+        ['options after the function throw, as in Vitest 4', OPTIONS_AFTER_FUNCTION],
+        ['options after the function of each row throw', OPTIONS_AFTER_FUNCTION],
+        ['two functions throw, as in Vitest', 'TypeError: Cannot use two functions as arguments'],
         ['prop awaits an async predicate', 'Property failed'],
         ['prop rejects a promise from a function that is not async', 'returned a promise'],
         ['prop fails on false', 'Property failed']

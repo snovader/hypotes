@@ -1,6 +1,6 @@
-// Tests and suites, declared through node:test with Vitest's API: `.each`,
-// `.for`, with rows in an array or a table in a template literal, `.skipIf`
-// and `.runIf`, and test options after the function.
+// Tests and suites, declared through node:test with Vitest's API: `.each`
+// and `.for`, with rows in an array or a table in a template literal,
+// `.skipIf` and `.runIf`, and a timeout after the function.
 import * as nodeTest from 'node:test';
 import { toArray } from '@vitest/utils/helpers';
 import { callerSite, callFrom, type Site } from './site.ts';
@@ -35,12 +35,13 @@ export type TestFunction = (context: TestContext) => Awaitable<unknown>;
 export type SuiteFunction = (context: SuiteContext) => Awaitable<unknown>;
 
 /**
- * Declares a test or a suite, with its options after its function, as
- * Vitest takes them, or before it, as node:test does. A timeout alone can
- * take their place. Without a function, it's to do.
+ * Declares a test or a suite, with its options before its function, as
+ * Vitest and node:test take them, or a timeout alone after it. As in Vitest
+ * 4, options after the function throw a TypeError. Without a function, it's
+ * to do.
  */
 export interface Declare<Fn> {
-    (name: string, fn?: Fn, options?: TestOptions | number): void;
+    (name: string, fn?: Fn, timeout?: number): void;
     (name: string, options: TestOptions, fn?: Fn): void;
 }
 
@@ -132,21 +133,52 @@ export type Define<Fn> = (
 
 type Argument<Fn> = Fn | TestOptions | number | undefined;
 
-/** The function and options of a declaration, in either order */
+/**
+ * The function and options of a declaration, as Vitest 4 reads them: its
+ * options before its function, or a timeout after it. It throws a TypeError,
+ * with Vitest's message, for options after the function, which Vitest took
+ * until 4, and for two functions.
+ */
 export function parseArguments<Fn>(
     first: Argument<Fn>,
     second: Argument<Fn>
 ): { fn: Fn | undefined; options: TestOptions } {
-    if (typeof first === 'object') {
-        return { fn: second as Fn | undefined, options: first as TestOptions };
+    if (second !== null && typeof second === 'object') {
+        throw new TypeError(
+            'Signature "test(name, fn, { ... })" was deprecated in Vitest 3 and removed in Vitest 4. Please, provide options as a second argument instead.'
+        );
+    }
+    if (typeof first === 'function' && typeof second === 'function') {
+        throw new TypeError(
+            'Cannot use two functions as arguments. Please use the second argument for options.'
+        );
     }
 
-    const fn = first as Fn | undefined;
+    return { fn: functionOf(first, second), options: optionsOf(first, second) };
+}
+
+/** The function of a declaration, before a timeout or after its options */
+function functionOf<Fn>(
+    first: Argument<Fn>,
+    second: Argument<Fn>
+): Fn | undefined {
+    if (typeof first === 'function') {
+        return first;
+    }
+
+    return typeof second === 'function' ? second : undefined;
+}
+
+/**
+ * The options of a declaration: a timeout after its function, or else the
+ * options before it
+ */
+function optionsOf<Fn>(first: Argument<Fn>, second: Argument<Fn>): TestOptions {
     if (typeof second === 'number') {
-        return { fn, options: { timeout: second } };
+        return { timeout: second };
     }
 
-    return { fn, options: (second as TestOptions | undefined) ?? {} };
+    return typeof first === 'object' ? (first as TestOptions) : {};
 }
 
 /**
