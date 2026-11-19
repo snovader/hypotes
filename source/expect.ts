@@ -34,14 +34,15 @@ chai.use(JestAsymmetricMatchers);
 
 /**
  * Vitest's `expect`, with its matchers, such as `toStrictEqual`, its
- * asymmetric matchers, such as `expect.any`, and `extend` and
- * `addEqualityTesters`. The members that need Vitest's runner, such as
- * `expect.soft` and `expect.assertions`, aren't here.
+ * asymmetric matchers, such as `expect.any`, `extend` and
+ * `addEqualityTesters`, and `fail`, which it has from chai's. The members
+ * that need Vitest's runner, such as `expect.soft` and `expect.assertions`,
+ * aren't here.
  */
 export interface Expect
     extends
         AsymmetricMatchersContaining,
-        Pick<ExpectStatic, 'any' | 'anything' | 'extend' | 'not'> {
+        Pick<ExpectStatic, 'any' | 'anything' | 'extend' | 'fail' | 'not'> {
     <T>(actual: T, message?: string): Assertion<void, T>;
     /** Adds testers, which `toEqual` and other matchers try first */
     addEqualityTesters: (testers: Tester[]) => void;

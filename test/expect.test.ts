@@ -61,6 +61,11 @@ describe('expect', () => {
         expect({ a: 1, b: 2 }).toEqual(expect.objectContaining({ a: anything }));
     });
 
+    it("should fail with expect.fail, which Vitest's expect has from chai's", () => {
+        expect(() => expect.fail('a message')).toThrow('a message');
+        expect(messageOf(() => expect.fail(1, 2, 'differ', '>'))).toBe('differ');
+    });
+
     it("should check Vitest's spies", () => {
         const spy = vi.fn<(value: string) => void>();
         spy('a');

@@ -42,6 +42,28 @@ it.for([[1, 2]])(
     }
 );
 
+it.each`
+    a    | b    | sum
+    ${1} | ${2} | ${3}
+    ${2} | ${3} | ${5}
+`('each takes a table, $a + $b is $sum', ({ a, b, sum }) => {
+    expect(a + b).toBe(sum);
+});
+
+it.for`
+    value
+    ${'x'}
+`('for takes a table, $value', (row, context) => {
+    expect(row).toEqual({ value: 'x' });
+    expect(context.name).toBe('for takes a table, x');
+});
+
+it.each`
+    a | b
+`('each takes the strings of a template without values as rows, %#', row => {
+    expect(row).toBe('\n    a | b\n');
+});
+
 it.skip('skip skips', () => {
     expect('ran').toBe('skipped');
 });
@@ -82,6 +104,29 @@ it('a timeout after the function applies', async () => {
     });
 }, 10);
 
+/** The function of a declaration that throws, which never runs */
+function neverRuns(): void {
+    expect.fail('ran');
+}
+
+// oxlint-disable-next-line hypotes/expect-expect -- Fails by the error of the declaration in it
+it('options after the function throw, as in Vitest 4', () => {
+    // @ts-expect-error -- Options after the function, which Vitest 4 removed
+    it('declares nothing', neverRuns, { timeout: 10 });
+});
+
+// oxlint-disable-next-line hypotes/expect-expect -- Fails by the error of the declaration in it
+it('options after the function of each row throw', () => {
+    // @ts-expect-error -- Options after the function, which Vitest 4 removed
+    it.each([1])('declares nothing for %i', neverRuns, { timeout: 10 });
+});
+
+// oxlint-disable-next-line hypotes/expect-expect -- Fails by the error of the declaration in it
+it('two functions throw, as in Vitest', () => {
+    // @ts-expect-error -- Two functions, of which Vitest takes neither
+    it('declares nothing', neverRuns, neverRuns);
+});
+
 // oxlint-disable-next-line hypotes/valid-title -- Says that `test` is `it`
 test('test is it', () => {
     expect(test).toBe(it);
@@ -90,6 +135,24 @@ test('test is it', () => {
 describe.each(['A'])('describe.each %s', name => {
     it('declares tests in the suite', () => {
         expect(name).toBe('A');
+    });
+});
+
+describe.each`
+    name
+    ${'B'}
+`('describe.each takes a table, $name', ({ name }) => {
+    it('declares tests in the suite of the row', () => {
+        expect(name).toBe('B');
+    });
+});
+
+describe.for`
+    name
+    ${'C'}
+`('describe.for takes a table, $name', row => {
+    it('declares tests in the suite of the whole row', () => {
+        expect(row).toEqual({ name: 'C' });
     });
 });
 

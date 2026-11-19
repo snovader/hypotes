@@ -99,6 +99,10 @@ const [
     resultsOf(COLORS, { colors: true })
 ]);
 
+/** The start of the error that Vitest 4 throws for options after the function */
+const OPTIONS_AFTER_FUNCTION =
+    'TypeError: Signature "test(name, fn, { ... })" was deprecated in Vitest 3 and removed in Vitest 4';
+
 /** The result of the test or suite of the title, which ran */
 function resultOf(title: string): Result {
     const result = results.get(title);
@@ -114,11 +118,19 @@ describe('declarations', () => {
         'each passes row 1 whole unless every row is an array',
         'each names a with -0',
         'for passes [1, 2] whole, and the context',
+        'each takes a table, 1 + 2 is 3',
+        'each takes a table, 2 + 3 is 5',
+        'for takes a table, x',
+        'each takes the strings of a template without values as rows, 0',
         'skipIf runs if false',
         'runIf runs if true',
         'test is it',
         'describe.each A',
         'declares tests in the suite',
+        'describe.each takes a table, B',
+        'declares tests in the suite of the row',
+        'describe.for takes a table, C',
+        'declares tests in the suite of the whole row',
         'hooks',
         'hooks run in the order that node:test runs them',
         'vi.fn records calls for the matchers',
@@ -151,6 +163,9 @@ describe('declarations', () => {
 
     it.each([
         ['a timeout after the function applies', 'timed out after 10ms'],
+        ['options after the function throw, as in Vitest 4', OPTIONS_AFTER_FUNCTION],
+        ['options after the function of each row throw', OPTIONS_AFTER_FUNCTION],
+        ['two functions throw, as in Vitest', 'TypeError: Cannot use two functions as arguments'],
         ['prop awaits an async predicate', 'Property failed'],
         ['prop rejects a promise from a function that is not async', 'returned a promise'],
         ['prop fails on false', 'Property failed']
@@ -163,6 +178,7 @@ describe('declarations', () => {
 
     it.each([
         ['each spreads 1 and a', "])('each spreads %i and %s'"],
+        ['each takes a table, 1 + 2 is 3', "`('each takes a table, $a + $b is $sum'"],
         ['skip skips', "it.skip('skip skips'"],
         ['test is it', "test('test is it'"],
         ['prop takes parameters', 'property.prop([fc.nat()], { numRuns: 7 })(']

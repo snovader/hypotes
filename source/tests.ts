@@ -1,8 +1,10 @@
-// Tests and suites, declared through node:test with Vitest's API: `.each`,
-// `.for`, `.skipIf` and `.runIf`, and test options after the function.
+// Tests and suites, declared through node:test with Vitest's API: `.each`
+// and `.for`, with rows in an array or a table in a template literal,
+// `.skipIf` and `.runIf`, and a timeout after the function.
 import * as nodeTest from 'node:test';
 import { toArray } from '@vitest/utils/helpers';
 import { callerSite, callFrom, type Site } from './site.ts';
+import { parseTable } from './table.ts';
 import { formatTitle } from './title.ts';
 
 type Awaitable<T> = PromiseLike<T> | T;
@@ -33,36 +35,55 @@ export type TestFunction = (context: TestContext) => Awaitable<unknown>;
 export type SuiteFunction = (context: SuiteContext) => Awaitable<unknown>;
 
 /**
- * Declares a test or a suite, with its options after its function, as
- * Vitest takes them, or before it, as node:test does. A timeout alone can
- * take their place. Without a function, it's to do.
+ * Declares a test or a suite, with its options before its function, as
+ * Vitest and node:test take them, or a timeout alone after it. As in Vitest
+ * 4, options after the function throw a TypeError. Without a function, it's
+ * to do.
  */
 export interface Declare<Fn> {
-    (name: string, fn?: Fn, options?: TestOptions | number): void;
+    (name: string, fn?: Fn, timeout?: number): void;
     (name: string, options: TestOptions, fn?: Fn): void;
 }
+
+/**
+ * A row of a table in a template literal, whose columns only the template's
+ * text names. Its values are typed as any, as Vitest types them, so that a
+ * function can destructure them, or declare their types.
+ */
+// oxlint-disable-next-line typescript/no-explicit-any -- TypeScript can't read the columns from the template
+export type TableRow = any;
 
 /**
  * Declares a test or a suite for each row, which `formatTitle` names. Its
  * function takes the row's values, if every row is an array, and otherwise
  * the row. A readonly row's values are spread into parameters, which can't be
- * readonly.
+ * readonly. The rows of a table in a template literal are objects.
  */
 export interface Each<Result> {
     <Row extends readonly unknown[] | [unknown]>(
         rows: readonly Row[]
     ): Declare<(...values: [...Row]) => Result>;
     <Row>(rows: readonly Row[]): Declare<(row: Row) => Result>;
+    (
+        strings: TemplateStringsArray,
+        ...values: unknown[]
+    ): Declare<(row: TableRow) => Result>;
 }
 
 /**
  * Declares a test or a suite for each row, which `formatTitle` names. Its
  * function takes the row, whether or not it's an array, and a test's
- * context.
+ * context. The rows of a table in a template literal are objects.
  */
-export type For<Context extends unknown[]> = <Row>(
-    rows: readonly Row[]
-) => Declare<(row: Row, ...context: Context) => Awaitable<unknown>>;
+export interface For<Context extends unknown[]> {
+    <Row>(
+        rows: readonly Row[]
+    ): Declare<(row: Row, ...context: Context) => Awaitable<unknown>>;
+    (
+        strings: TemplateStringsArray,
+        ...values: unknown[]
+    ): Declare<(row: TableRow, ...context: Context) => Awaitable<unknown>>;
+}
 
 /** The variants of a test or a suite, which apply to any combination */
 export interface Modifiers<API> {
@@ -112,21 +133,52 @@ export type Define<Fn> = (
 
 type Argument<Fn> = Fn | TestOptions | number | undefined;
 
-/** The function and options of a declaration, in either order */
+/**
+ * The function and options of a declaration, as Vitest 4 reads them: its
+ * options before its function, or a timeout after it. It throws a TypeError,
+ * with Vitest's message, for options after the function, which Vitest took
+ * until 4, and for two functions.
+ */
 export function parseArguments<Fn>(
     first: Argument<Fn>,
     second: Argument<Fn>
 ): { fn: Fn | undefined; options: TestOptions } {
-    if (typeof first === 'object') {
-        return { fn: second as Fn | undefined, options: first as TestOptions };
+    if (second !== null && typeof second === 'object') {
+        throw new TypeError(
+            'Signature "test(name, fn, { ... })" was deprecated in Vitest 3 and removed in Vitest 4. Please, provide options as a second argument instead.'
+        );
+    }
+    if (typeof first === 'function' && typeof second === 'function') {
+        throw new TypeError(
+            'Cannot use two functions as arguments. Please use the second argument for options.'
+        );
     }
 
-    const fn = first as Fn | undefined;
+    return { fn: functionOf(first, second), options: optionsOf(first, second) };
+}
+
+/** The function of a declaration, before a timeout or after its options */
+function functionOf<Fn>(
+    first: Argument<Fn>,
+    second: Argument<Fn>
+): Fn | undefined {
+    if (typeof first === 'function') {
+        return first;
+    }
+
+    return typeof second === 'function' ? second : undefined;
+}
+
+/**
+ * The options of a declaration: a timeout after its function, or else the
+ * options before it
+ */
+function optionsOf<Fn>(first: Argument<Fn>, second: Argument<Fn>): TestOptions {
     if (typeof second === 'number') {
-        return { fn, options: { timeout: second } };
+        return { timeout: second };
     }
 
-    return { fn, options: (second as TestOptions | undefined) ?? {} };
+    return typeof first === 'object' ? (first as TestOptions) : {};
 }
 
 /**
@@ -175,12 +227,33 @@ function createAPI<Fn>(
     });
 }
 
+/**
+ * The rows that `.each` or `.for` declares, from what it's called with: a
+ * table's, if values follow the cases, as a template literal's follow its
+ * strings, and otherwise the cases themselves. As in Vitest, the strings of a
+ * template literal without values are its rows.
+ */
+function rowsOf(
+    cases: readonly unknown[],
+    values: readonly unknown[]
+): readonly unknown[] {
+    return values.length > 0
+        ? parseTable(cases as readonly string[], values)
+        : cases;
+}
+
 /** `.each`: spreads the rows if every row is an array */
 function each<Fn>(
     define: Define<Fn>
-): (rows: readonly unknown[]) => Declare<Fn> {
-    return rows =>
-        (name: string, first?: Argument<Fn>, second?: Argument<Fn>): void => {
+): (cases: readonly unknown[], ...values: unknown[]) => Declare<Fn> {
+    return (cases, ...values) => {
+        const rows = rowsOf(cases, values);
+
+        return (
+            name: string,
+            first?: Argument<Fn>,
+            second?: Argument<Fn>
+        ): void => {
             const site = callerSite();
             const { fn, options } = parseArguments(first, second);
             const handler = fn as
@@ -189,22 +262,29 @@ function each<Fn>(
             const spread = rows.every(row => Array.isArray(row));
 
             for (const [index, row] of rows.entries()) {
-                const values: unknown[] = Array.isArray(row) ? row : [row];
-                const title = formatTitle(name, values, index);
+                const items: unknown[] = Array.isArray(row) ? row : [row];
+                const title = formatTitle(name, items, index);
                 const run = (): unknown =>
-                    spread ? handler?.(...values) : handler?.(row);
+                    spread ? handler?.(...items) : handler?.(row);
 
                 define(title, options, handler && (run as Fn), site);
             }
         };
+    };
 }
 
 /** `.for`: passes each row whole, and a test's context after it */
 function forEach<Fn>(
     define: Define<Fn>
-): (rows: readonly unknown[]) => Declare<Fn> {
-    return rows =>
-        (name: string, first?: Argument<Fn>, second?: Argument<Fn>): void => {
+): (cases: readonly unknown[], ...values: unknown[]) => Declare<Fn> {
+    return (cases, ...values) => {
+        const rows = rowsOf(cases, values);
+
+        return (
+            name: string,
+            first?: Argument<Fn>,
+            second?: Argument<Fn>
+        ): void => {
             const site = callerSite();
             const { fn, options } = parseArguments(first, second);
             const handler = fn as
@@ -219,6 +299,7 @@ function forEach<Fn>(
                 define(title, options, handler && (run as Fn), site);
             }
         };
+    };
 }
 
 /** Declares a test through node:test, which awaits it */

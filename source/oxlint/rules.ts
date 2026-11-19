@@ -4,15 +4,16 @@
 // `it` or `test` from hypotes, its fast-check subpath or node:test, and a
 // describe block is a call of `describe` or `suite` from them, through any of
 // their variants, such as `it.only`, and of the functions that `it.each()`,
-// `it.for()`, `it.prop()`, `it.skipIf()` and `it.runIf()` return. An
+// `it.for()`, `it.prop()`, `it.skipIf()` and `it.runIf()` return, and that
+// `it.each` and `it.for` return for a table in a template literal. An
 // assertion is a call of hypotes' `expect`, or, to expect-expect, of any
 // function whose name starts with `expect`, and `vi` is hypotes' `vi`.
 //
 // They find what oxlint's do, with these differences. TypeScript checks the
 // types of arguments, such as a title's, so the rules don't. They take no
-// options. They read the options of a test, before its function or after
-// it: no-focused-tests, no-disabled-tests and warn-todo report `only`,
-// `skip` and `todo` there too. valid-expect-in-promise follows a promise
+// options. They read the options of a test before its function, where Vitest
+// and node:test take them: no-focused-tests, no-disabled-tests and warn-todo
+// report `only`, `skip` and `todo` there too. valid-expect-in-promise follows a promise
 // through the variable that holds it, and counts a method of Promise, such
 // as `Promise.all()`, only where it's awaited or returned. hoisted-apis-on-top
 // accepts what `hypotes/register` hoists: `vi.hoisted()` that declares one
@@ -72,6 +73,13 @@ const FACTORIES: ReadonlySet<string> = new Set([
     'runIf',
     'skipIf'
 ]);
+
+/**
+ * Members of `it`, `test`, `describe` and `suite` that return the function
+ * that declares for a table in a template literal, as `` it.each`table` ``
+ * does
+ */
+const TABLE_FACTORIES: ReadonlySet<string> = new Set(['each', 'for']);
 
 /** Members between `expect()` and its matcher */
 const MODIFIERS: ReadonlySet<string> = new Set(['not', 'rejects', 'resolves']);
@@ -302,8 +310,8 @@ function declarationOf(
 
 /**
  * What a call's callee declares through: `it` for `it()`, `it.skip()`,
- * `it.each(rows)()` and `it.skipIf(condition).only()`. It adds the members
- * that it passes to `members`, if given.
+ * `it.each(rows)()`, `` it.each`table`() `` and `it.skipIf(condition).only()`.
+ * It adds the members that it passes to `members`, if given.
  */
 function declarerOf(
     callee: CallExpression['callee'],
@@ -318,6 +326,12 @@ function declarerOf(
         ) {
             members?.push(target.callee);
             target = target.callee.object;
+        } else if (
+            target.type === 'TaggedTemplateExpression' &&
+            isNamedMember(target.tag, TABLE_FACTORIES)
+        ) {
+            members?.push(target.tag);
+            target = target.tag.object;
         } else if (isNamedMember(target, VARIANTS)) {
             members?.push(target);
             target = target.object;
@@ -349,7 +363,7 @@ function isFunctionExpression(node: Node): node is FunctionExpression {
 
 /**
  * The function that a declaration passes, as hypotes reads it: after the
- * title, or after the options, which may come first, as node:test takes them
+ * title, or after the options that come before it
  */
 function functionOf(call: CallExpression): Argument | undefined {
     const [, first, second] = call.arguments;
@@ -369,21 +383,19 @@ function functionOf(call: CallExpression): Argument | undefined {
  * as `{ skip: true }` or `{ skip: 'a reason' }`
  */
 function optionNamed(call: CallExpression, name: string): Node | undefined {
-    // The title comes first
-    for (let index = 1; index < call.arguments.length; index++) {
-        const argument = call.arguments[index];
-        if (argument?.type !== 'ObjectExpression') {
-            continue;
-        }
+    // After the title, and before the function
+    const options = call.arguments[1];
+    if (options?.type !== 'ObjectExpression') {
+        return undefined;
+    }
 
-        for (const property of argument.properties) {
-            if (
-                property.type === 'Property' &&
-                keyNameOf(property) === name &&
-                isTruthyLiteral(property.value)
-            ) {
-                return property;
-            }
+    for (const property of options.properties) {
+        if (
+            property.type === 'Property' &&
+            keyNameOf(property) === name &&
+            isTruthyLiteral(property.value)
+        ) {
+            return property;
         }
     }
 
@@ -407,8 +419,8 @@ function isTruthyLiteral(node: Node): boolean {
 }
 
 /**
- * Whether a call passes a function written in place: a test's, before its
- * options or after them
+ * Whether a call passes a function written in place: a test's, after its
+ * title or its options
  */
 function hasCallback(call: CallExpression): boolean {
     return call.arguments.some(isFunctionExpression);
@@ -1325,7 +1337,7 @@ export const validDescribeCallback: Rule = {
         type: 'problem',
         docs: {
             description:
-                'Requires a describe block to pass a function written in place, which takes no parameters, unless it declares a block for each row, and returns nothing. It may be async, and its options may come before it or after it.'
+                'Requires a describe block to pass a function written in place, which takes no parameters, unless it declares a block for each row, and returns nothing. It may be async, and its options may come before it.'
         }
     },
     create(context) {
