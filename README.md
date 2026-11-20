@@ -157,6 +157,81 @@ it('greets the name in the file', () => {
 Module mocks differ from Vitest's in a few ways, which
 [Module mocks](#module-mocks) under the differences lists.
 
+## TypeScript that Node doesn't strip
+
+Node strips types, but rejects TypeScript that needs compiling, such as
+enums, namespaces and parameter properties:
+
+```text
+SyntaxError [ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX]: TypeScript enum is not supported in strip-only mode
+```
+
+[`@snovader/node-hooks`](https://www.npmjs.com/package/@snovader/node-hooks)
+strips types with oxc instead, which compiles them. Its README says how else
+it differs from Node's stripping. hypotes' module mocks work with it.
+
+1. Install it:
+
+   ```bash
+   npm install --save-dev @snovader/node-hooks
+   ```
+
+2. Write a module that Node can't strip, as `src/direction.ts`:
+
+   ```ts
+   export enum Direction {
+       Up = 'up',
+       Down = 'down'
+   }
+   ```
+
+   And its test, as `test/direction.test.ts`:
+
+   ```ts
+   import { expect, it } from 'hypotes';
+   import { Direction } from '../src/direction.ts';
+
+   it('reads an enum', () => {
+       expect(Direction.Up).toBe('up');
+   });
+   ```
+
+3. Run the tests with both preloads, and with source maps:
+
+   ```bash
+   node --enable-source-maps --import hypotes/register --import @snovader/node-hooks/register --test
+   ```
+
+   ```text
+   ✔ reads an enum (0.699208ms)
+   ✔ greets the name in the file (1.082625ms)
+   ℹ tests 2
+   ℹ suites 0
+   ℹ pass 2
+   ℹ fail 0
+   ℹ cancelled 0
+   ℹ skipped 0
+   ℹ todo 0
+   ℹ duration_ms 359.02475
+   ```
+
+   Without module mocks, leave out `--import hypotes/register`. With them,
+   the two preloads work in either order.
+
+oxc prints the code anew, so its lines aren't the file's. node-hooks maps
+them back only with `--enable-source-maps`. Without it, node:test reports
+where tests are declared, and stack traces where they fail, at the wrong
+lines.
+
+node-hooks' README suggests `--no-strip-types`. With it, `node --test`
+doesn't look for `.ts` files, so name them, as in
+`node --test "test/**/*.test.ts"`.
+
+If you register node-hooks' resolution cache yourself, register it before
+`hypotes/register`, so that it runs after it. Run before it, the cache keeps
+the first resolution of each module. `vi.doMock()` then can't mock a module
+that was imported before, and mocks of built-in modules don't apply.
+
 ## Moving a test file from Vitest
 
 1. Import from `hypotes` what the file imports from `vitest`, and from
@@ -167,7 +242,8 @@ Module mocks differ from Vitest's in a few ways, which
    name their files with the extension, as `./sum.ts`. Enums, path aliases
    and JSX don't run, and neither does what Vite's plugins add.
    [Type stripping](https://nodejs.org/api/typescript.html#type-stripping),
-   in Node's documentation, says what does.
+   in Node's documentation, says what does. For enums, see
+   [TypeScript that Node doesn't strip](#typescript-that-node-doesnt-strip).
 3. Run it with `node --test`, which
    [runs other files](#quick-start) than Vitest does. If it mocks modules,
    set up [the preload](#mocking-modules) first.
