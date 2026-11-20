@@ -92,6 +92,17 @@ describe('vi.waitFor', () => {
         expect(now).toBe(100);
         expect(String(error)).toContain('never');
     });
+
+    it('should reject with what a fake timer throws as the first call moves the clock', async () => {
+        const callback = vi.fn<() => string>(() => 'value');
+        vi.useFakeTimers();
+        setTimeout(() => {
+            throw new Error('timer');
+        }, 10);
+
+        await expect(vi.waitFor(callback)).rejects.toThrow('timer');
+        expect(callback).not.toHaveBeenCalled();
+    });
 });
 
 describe('vi.waitUntil', () => {

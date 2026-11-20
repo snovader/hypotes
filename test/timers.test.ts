@@ -1,4 +1,5 @@
 import nodeTimers, { setTimeout as importedSetTimeout } from 'node:timers';
+import nodeTimersPromises, { setTimeout as importedSleep } from 'node:timers/promises';
 import { afterEach, describe, expect, it, vi } from 'hypotes';
 import { fc, it as property } from 'hypotes/fast-check';
 
@@ -13,6 +14,7 @@ const real = {
     queueMicrotask,
     setTimeout,
     nodeSetTimeout: nodeTimers.setTimeout,
+    nodeSleep: nodeTimersPromises.setTimeout,
     Temporal: Reflect.get(globalThis, 'Temporal') as unknown
 };
 
@@ -95,6 +97,25 @@ describe('vi.useFakeTimers', () => {
         expect([nodeTimers.setTimeout, importedSetTimeout]).toEqual([
             real.nodeSetTimeout,
             real.nodeSetTimeout
+        ]);
+    });
+
+    it("should leave node:timers/promises' exports real, unless fakeNodeBuiltins is set", async () => {
+        const slept = vi.fn<() => void>();
+
+        vi.useFakeTimers();
+        const byDefault = nodeTimersPromises.setTimeout;
+        vi.useFakeTimers({ fakeNodeBuiltins: true });
+        // A second of the fake clock, which real time doesn't reach here
+        void importedSleep(1000).then(slept);
+        await vi.advanceTimersByTimeAsync(1000);
+        vi.useRealTimers();
+
+        expect(byDefault).toBe(real.nodeSleep);
+        expect(slept).toHaveBeenCalledOnce();
+        expect([nodeTimersPromises.setTimeout, importedSleep]).toEqual([
+            real.nodeSleep,
+            real.nodeSleep
         ]);
     });
 

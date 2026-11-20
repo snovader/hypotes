@@ -119,93 +119,139 @@ function prefixMessage(error: unknown, message: string | undefined): unknown {
 }
 
 /**
- * Calls the function now, and then at each interval, until the policy
- * accepts a value of it, its error ends the wait, or the timeout passes
+ * A wait for a function, which calls it now, and then at each interval,
+ * until the policy accepts a value of it, its error ends the wait, or the
+ * timeout passes
  */
-function poll<T>(
-    callback: () => T | PromiseLike<T>,
-    options: number | WaitOptions,
-    policy: Policy,
-    clock: FakeClock
-): Promise<T> {
-    const { setTimeout, setInterval, clearTimeout, clearInterval } =
-        getSafeTimers();
-    const {
-        interval = 50,
-        timeout = 1000,
-        message
-    } = typeof options === 'number' ? { timeout: options } : options;
-    // Made here, so that its stack names where the wait was called
-    const timedOut = new Error(`Timed out in ${policy.name}!`);
+class Wait<T> {
+    readonly #callback: () => T | PromiseLike<T>;
+    readonly #policy: Policy;
+    readonly #clock: FakeClock;
 
-    return new Promise<T>((resolve, reject) => {
-        let lastError: unknown;
-        let pending = false;
-        let settled = false;
-        let timeoutId: ReturnType<typeof setTimeout> | undefined;
-        let intervalId: ReturnType<typeof setInterval> | undefined;
+    readonly #interval: number;
+    readonly #timeout: number;
+    readonly #message: string | undefined;
+    /** Made with the wait, so that its stack names where the wait was called */
+    readonly #timedOut: Error;
 
-        function stop(): void {
-            settled = true;
-            clearTimeout(timeoutId);
-            clearInterval(intervalId);
+    /** The real timers, which the wait keeps to while the timers are fake */
+    readonly #timers = getSafeTimers();
+    readonly #result = Promise.withResolvers<T>();
+
+    #lastError: unknown;
+    /** Whether a promise of the function's is still to settle */
+    #pending = false;
+    #settled = false;
+    #timeoutId: ReturnType<typeof setTimeout> | undefined;
+    #intervalId: ReturnType<typeof setInterval> | undefined;
+
+    constructor(
+        callback: () => T | PromiseLike<T>,
+        options: number | WaitOptions,
+        policy: Policy,
+        clock: FakeClock
+    ) {
+        const {
+            interval = 50,
+            timeout = 1000,
+            message
+        } = typeof options === 'number' ? { timeout: options } : options;
+
+        this.#callback = callback;
+        this.#policy = policy;
+        this.#clock = clock;
+
+        this.#interval = interval;
+        this.#timeout = timeout;
+        this.#message = message;
+        this.#timedOut = new Error(`Timed out in ${policy.name}!`);
+    }
+
+    /** Calls the function for the first time, and returns the wait's promise */
+    start(): Promise<T> {
+        const { setTimeout, setInterval } = this.#timers;
+        const { promise, reject } = this.#result;
+
+        try {
+            this.#check();
+        } catch (error) {
+            // A fake timer threw as the clock moved, which ends the wait
+            reject(error);
+            return promise;
         }
 
-        function onValue(value: T): void {
-            pending = false;
-            if (policy.accepts(value)) {
-                stop();
-                resolve(value);
-            }
+        if (!this.#settled) {
+            this.#timeoutId = setTimeout(
+                () => this.#onTimeout(),
+                this.#timeout
+            );
+            this.#intervalId = setInterval(() => this.#check(), this.#interval);
         }
 
-        function onError(error: unknown): void {
-            pending = false;
-            if (policy.retriesErrors) {
-                lastError = error;
+        return promise;
+    }
+
+    /** Moves the fake timers forward, and calls the function if it's due */
+    #check(): void {
+        if (this.#clock.isFakeTimers()) {
+            this.#clock.advanceTimersByTime(this.#interval);
+        }
+        if (this.#pending) {
+            return;
+        }
+
+        try {
+            const result = this.#callback();
+            if (isThenable(result)) {
+                this.#pending = true;
+                result.then(
+                    value => this.#onValue(value),
+                    (error: unknown) => this.#onError(error)
+                );
             } else {
-                stop();
-                // The function's own error, whatever it threw
-                // oxlint-disable-next-line typescript/prefer-promise-reject-errors
-                reject(prefixMessage(error, message));
+                this.#onValue(result);
             }
+        } catch (error) {
+            this.#onError(error);
         }
+    }
 
-        function onTimeout(): void {
-            stop();
-            // As Vitest does, a falsy error counts as none
-            // oxlint-disable-next-line typescript/prefer-nullish-coalescing, typescript/strict-boolean-expressions, typescript/prefer-promise-reject-errors
-            reject(prefixMessage(lastError || timedOut, message));
+    #onValue(value: T): void {
+        this.#pending = false;
+        if (this.#policy.accepts(value)) {
+            this.#stop();
+            this.#result.resolve(value);
         }
+    }
 
-        function check(): void {
-            if (clock.isFakeTimers()) {
-                clock.advanceTimersByTime(interval);
-            }
-            // A promise of the function's is still to settle
-            if (pending) {
-                return;
-            }
-
-            try {
-                const result = callback();
-                if (isThenable(result)) {
-                    pending = true;
-                    result.then(onValue, onError);
-                } else {
-                    onValue(result);
-                }
-            } catch (error) {
-                onError(error);
-            }
+    #onError(error: unknown): void {
+        this.#pending = false;
+        if (this.#policy.retriesErrors) {
+            this.#lastError = error;
+        } else {
+            this.#stop();
+            // The function's own error, whatever it threw
+            this.#result.reject(prefixMessage(error, this.#message));
         }
+    }
 
-        check();
-        if (!settled) {
-            timeoutId = setTimeout(onTimeout, timeout);
-            intervalId = setInterval(check, interval);
-        }
-    });
+    #onTimeout(): void {
+        this.#stop();
+        // As Vitest does, a falsy error counts as none
+        // oxlint-disable-next-line typescript/prefer-nullish-coalescing, typescript/strict-boolean-expressions
+        const error = this.#lastError || this.#timedOut;
+
+        this.#result.reject(prefixMessage(error, this.#message));
+    }
+
+    /** Ends the calls of the function, once the wait has its result */
+    #stop(): void {
+        const { clearTimeout, clearInterval } = this.#timers;
+
+        this.#settled = true;
+        clearTimeout(this.#timeoutId);
+        clearInterval(this.#intervalId);
+    }
 }
 
 /**
@@ -215,10 +261,13 @@ function poll<T>(
 export function createWaitAPI(clock: FakeClock): WaitAPI {
     return {
         waitFor: (callback, options = {}) =>
-            poll(callback, options, WAIT_FOR, clock),
+            new Wait(callback, options, WAIT_FOR, clock).start(),
         waitUntil: <T>(
             callback: () => T | Promise<T>,
             options: number | WaitOptions = {}
-        ) => poll(callback, options, WAIT_UNTIL, clock) as Promise<Truthy<T>>
+        ) =>
+            new Wait(callback, options, WAIT_UNTIL, clock).start() as Promise<
+                Truthy<T>
+            >
     };
 }

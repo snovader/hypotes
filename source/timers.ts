@@ -296,10 +296,7 @@ class FakeTimers {
         return realNow();
     }
 
-    setTimerTickMode(
-        mode: 'manual' | 'nextTimerAsync' | 'interval',
-        interval?: number
-    ): void {
+    setTimerTickMode(mode: TickMode, interval?: number): void {
         const clock = this.#fakeClock();
 
         switch (mode) {
