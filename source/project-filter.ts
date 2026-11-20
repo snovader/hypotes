@@ -1,12 +1,12 @@
 // The projects that `--project` names, as Vitest's flag of the same name
-// selects them: by name, with `*` for any characters, and with a leading `!`
-// to leave projects out
+// selects them: by name, whatever the case of its letters, with `*` for any
+// characters, and with a leading `!` to leave projects out
 
 /** A pattern as a regular expression of a whole name, in which `*` is any characters */
 function toRegExp(pattern: string): RegExp {
     const literals = pattern.split('*').map(literal => RegExp.escape(literal));
 
-    return new RegExp(`^${literals.join('.*')}$`, 'u');
+    return new RegExp(`^${literals.join('.*')}$`, 'iu');
 }
 
 /** Selects projects by the patterns of `--project` */

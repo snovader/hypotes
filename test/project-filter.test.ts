@@ -17,6 +17,14 @@ describe('ProjectFilter', () => {
         expect(filter.matches(other)).toBe(other === project);
     });
 
+    it("should select a project whatever the case of its name's letters", () => {
+        const filter = new ProjectFilter(['@ACME/api', '!@acme/WEB']);
+
+        expect(
+            ['@acme/api', '@Acme/API', '@acme/web', 'docs'].filter(each => filter.matches(each))
+        ).toStrictEqual(['@acme/api', '@Acme/API']);
+    });
+
     it.prop([name, name, name])('should take * for any characters', (prefix, middle, suffix) => {
         const filter = new ProjectFilter([`${prefix}*${suffix}`]);
 

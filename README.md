@@ -519,6 +519,8 @@ node:test can't select files by their package, so with `--project` the
 command names each selected project's directory to node:test, as a pattern.
 node:test then finds the test files in it, as it does without `--project`.
 
+- **Names match in any case.** `--project "@SHOP/web"` selects
+  `@shop/web`, as it does in Vitest.
 - **Flags take their values after `=`.** Write
   `--test-name-pattern=adds`, not `--test-name-pattern adds`: with
   `--project`, the command takes an argument without a leading `-` for a
