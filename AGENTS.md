@@ -11,7 +11,9 @@ intent, not a requirement to preserve every detail.
   node:test's, `expect.ts` assembles the matchers, `site.ts` records where
   each test was declared, `mocks.ts` mocks modules, `hoist.ts` hoists the
   mocks of a test file, `timers.ts` fakes timers, `stubs.ts` stubs
-  globals, and `wait.ts` waits for a function to succeed.
+  globals, `wait.ts` waits for a function to succeed, `project.ts` finds the
+  package that a test file belongs to, and `reporter.ts` prints node:test's
+  results by file.
 - Search for existing implementations and related abstractions before adding
   code. Always consider reusability and where behavior belongs. Keep a helper
   local when its responsibility is local; share it when it has a coherent role
@@ -108,6 +110,13 @@ intent, not a requirement to preserve every detail.
   `@vitest/utils`, rather than reimplementing their matchers, spies, or
   formatting. Their versions move together, which Dependabot's `vitest` group
   keeps.
+- `hypotes/reporter` is a reporter for node:test, not a runner: it prints
+  the events that node:test reports, a row for each file, with its project,
+  in the format of Vitest's default reporter. It counts tests as node:test
+  counts them, and has node:test's `spec` format what it doesn't lay out
+  itself, the coverage. Its header says which of node:test's events it
+  relies on, and why not on the summary of a file. It imports nothing of the
+  package's that declares tests, so it reports any node:test run.
 - Where node:test makes the behavior differ from Vitest's, document the
   difference in the module that has it, as `hooks.ts` does for the order of
   after hooks and `TestOptions` does for `only`. Leave out what needs Vitest's
@@ -188,6 +197,12 @@ intent, not a requirement to preserve every detail.
   declaration behavior to the fixture and its expected result to the test.
   Some fixture tests fail on purpose. A fixture that mocks modules runs with
   `hypotes/register`, as `test/fixtures/mocks.ts` does.
+- `test/reporter.test.ts` runs the fixtures in `test/fixtures/projects/`
+  with the reporter in another process, and checks what it prints. Each
+  directory there is a package of its own, so its files can't import
+  hypotes, and declare node:test's tests. It gives the reporter events of
+  its own making only for what a run in the repository can't have, such as
+  a file that no package is above.
 - `yarn test` preloads `hypotes/register`, which node:test passes on to each
   test file's process, so a test file can mock modules, as
   `test/mocks.test.ts` does. A mock lasts for the rest of the file's

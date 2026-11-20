@@ -1,0 +1,457 @@
+// A reporter for node:test that prints a row for each test file, with its
+// project, as Vitest's default reporter does:
+//
+//     node --test --test-reporter=hypotes/reporter
+//
+//      ✓ |@acme/a| test/sum.test.ts (3 tests | 1 skipped) 2ms
+//
+// A file's project is the nearest package with a name, from `project.ts`.
+// The errors of failed tests come after the files, and then the totals.
+//
+// node:test reports a file's tests together, and files in order, under each
+// `--test-isolation`. So a file's row is printed once another file's tests
+// start, or the run ends. It reports a summary of a file too, but only from a
+// process of the file's own, and not for a file that failed to load, so the
+// counts here are of the tests' own events, counted as node:test counts
+// them.
+//
+// An event's `file` is where its test was declared, which is another module
+// if a helper declared it, as a rule tester does. Its `entryFile` is the
+// test file, which the rows are of. node:test sets it only for a file that
+// runs in a process of its own, so with `--test-isolation=none` such a test
+// goes under the module that declared it.
+import { relative, resolve, sep } from 'node:path';
+import process from 'node:process';
+import { spec, type TestEvent } from 'node:test/reporters';
+import { inspect, styleText } from 'node:util';
+import { Projects, type Project } from './project.ts';
+
+type TestStart = Extract<TestEvent, { type: 'test:start' }>;
+type TestPass = Extract<TestEvent, { type: 'test:pass' }>;
+type TestFail = Extract<TestEvent, { type: 'test:fail' }>;
+type TestResult = TestFail | TestPass;
+
+/**
+ * Whether Node prints colours, as it does to a terminal or with FORCE_COLOR:
+ * `styleText` leaves its text as it is where it doesn't
+ */
+const COLORS = styleText('red', 'text') !== 'text';
+
+/** The backgrounds of projects' names, one of which a name picks */
+const PROJECT_COLORS = ['bgYellow', 'bgCyan', 'bgGreen', 'bgMagenta'] as const;
+
+/**
+ * The diagnostics in which node:test reports the run's totals, which the
+ * totals here replace
+ */
+const TOTAL =
+    /^(?:tests|suites|pass|fail|cancelled|skipped|todo|duration_ms) [\d.]+$/u;
+
+/** The mark of a failure's error, which is a block of colour where it has one */
+const FAIL = COLORS ? styleText(['bold', 'inverse', 'red'], ' FAIL ') : ' FAIL';
+
+/** How many tests had each result. A suite isn't a test. */
+class Counts {
+    failed = 0;
+    passed = 0;
+    skipped = 0;
+    todo = 0;
+
+    total(): number {
+        return this.failed + this.passed + this.skipped + this.todo;
+    }
+
+    /** Counts a test as node:test does: one to do isn't failed, if it fails */
+    add({ type, data }: TestResult): void {
+        if (isSet(data.skip)) {
+            this.skipped++;
+        } else if (isSet(data.todo)) {
+            this.todo++;
+        } else if (type === 'test:fail') {
+            this.failed++;
+        } else {
+            this.passed++;
+        }
+    }
+
+    /** Adds the counts of a file's tests to a run's */
+    addAll(counts: Counts): void {
+        this.failed += counts.failed;
+        this.passed += counts.passed;
+        this.skipped += counts.skipped;
+        this.todo += counts.todo;
+    }
+
+    /** Each count but zeroes, as `1 failed | 2 passed`, and then the total */
+    format(): string {
+        const parts = [
+            this.failed > 0
+                ? styleText(['bold', 'red'], `${this.failed} failed`)
+                : '',
+            this.passed > 0
+                ? styleText(['bold', 'green'], `${this.passed} passed`)
+                : '',
+            this.skipped > 0
+                ? styleText('yellow', `${this.skipped} skipped`)
+                : '',
+            this.todo > 0 ? styleText('gray', `${this.todo} todo`) : ''
+        ].filter(part => part !== '');
+
+        const total = styleText('gray', `(${this.total()})`);
+
+        return parts.length === 0 ? total : `${parts.join(' | ')} ${total}`;
+    }
+}
+
+/** A test, a suite's hook, or a file that failed */
+interface Failure {
+    /** The names of its suites and its own. None, if it's the file itself. */
+    readonly titles: readonly string[];
+    readonly duration: number;
+    readonly error: string;
+}
+
+/** Why node:test failed a test, which its error says, as `subtestsFailed` */
+function failureType(error: Error): unknown {
+    return (error as { failureType?: unknown }).failureType;
+}
+
+/** Whether a test's `skip` or `todo` is true, or gives a reason */
+function isSet(flag: boolean | string | undefined): boolean {
+    return flag !== undefined && flag !== false;
+}
+
+function formatDuration(milliseconds: number): string {
+    return `${Math.round(milliseconds)}ms`;
+}
+
+/**
+ * The name of a project, on a background that the name picks, or between
+ * bars without colours, as Vitest prints it
+ */
+function formatProject({ name }: Project): string {
+    if (!COLORS) {
+        return `|${name}|`;
+    }
+
+    let sum = 0;
+    for (let index = 0; index < name.length; index++) {
+        sum += (name.codePointAt(index) ?? 0) + index;
+    }
+
+    return styleText(
+        [PROJECT_COLORS[sum % PROJECT_COLORS.length], 'black'],
+        ` ${name} `
+    );
+}
+
+/**
+ * What a test failed with, as node:test's reporters print it: node:test
+ * wraps what the test threw in an error of its own, as its cause
+ */
+function formatError(error: Error): string {
+    const cause = error.cause ?? error;
+
+    return typeof cause === 'string'
+        ? cause
+        : inspect(cause, { colors: COLORS });
+}
+
+/** The results of a test file's tests, which its row prints */
+class FileResults {
+    readonly #file: string;
+    readonly #cwd: string;
+    readonly #label: string;
+    readonly #counts = new Counts();
+    readonly #failures: Failure[] = [];
+    /** The names of the suites and the test that are running, by nesting */
+    readonly #running: string[] = [];
+    /** Of its tests and suites that aren't in a suite */
+    #duration = 0;
+
+    /** Of the file at the absolute path, which is named from `cwd` */
+    constructor(file: string, project: Project | undefined, cwd: string) {
+        const path = relative(project?.directory ?? cwd, file).replaceAll(
+            sep,
+            '/'
+        );
+
+        this.#file = file;
+        this.#cwd = cwd;
+        this.#label =
+            project === undefined ? path : `${formatProject(project)} ${path}`;
+    }
+
+    file(): string {
+        return this.#file;
+    }
+
+    counts(): Counts {
+        return this.#counts;
+    }
+
+    failed(): boolean {
+        return this.#failures.length > 0;
+    }
+
+    start({ name, nesting }: TestStart['data']): void {
+        this.#running.length = nesting;
+        this.#running.push(name);
+    }
+
+    add(result: TestResult): void {
+        const { name, nesting, details } = result.data;
+
+        if (nesting === 0) {
+            this.#duration += details.duration_ms;
+        }
+        if (details.type !== 'suite') {
+            this.#counts.add(result);
+        }
+        if (result.type === 'test:fail') {
+            this.#addFailure(result, this.#titles(name, nesting));
+        }
+    }
+
+    /**
+     * The names of a test's suites and its own. A file that fails as it
+     * loads is reported as a test named by its path, which the row has.
+     */
+    #titles(name: string, nesting: number): string[] {
+        if (nesting === 0 && resolve(this.#cwd, name) === this.#file) {
+            return [];
+        }
+
+        return [...this.#running.slice(0, nesting), name];
+    }
+
+    #addFailure({ data }: TestFail, titles: string[]): void {
+        const { error, duration_ms: duration } = data.details;
+
+        // A suite fails with its tests, whose own failures say why, and a
+        // test to do may fail
+        if (
+            failureType(error) === 'subtestsFailed' ||
+            isSet(data.todo) ||
+            isSet(data.skip)
+        ) {
+            return;
+        }
+
+        this.#failures.push({ titles, duration, error: formatError(error) });
+    }
+
+    /** The file's row, and a line for each of its failures */
+    formatRow(): string {
+        const total = this.#counts.total();
+        const { failed, skipped, todo } = this.#counts;
+        const counts = [
+            `${total} ${total === 1 ? 'test' : 'tests'}`,
+            failed > 0 ? styleText('red', `${failed} failed`) : '',
+            skipped > 0 ? styleText('yellow', `${skipped} skipped`) : '',
+            todo > 0 ? styleText('gray', `${todo} todo`) : ''
+        ].filter(part => part !== '');
+
+        const mark = this.failed()
+            ? styleText('yellow', '❯')
+            : styleText('green', '✓');
+        const duration = styleText('gray', formatDuration(this.#duration));
+        const row = ` ${mark} ${this.#label} ${styleText('gray', `(${counts.join(' | ')})`)} ${duration}\n`;
+
+        return (
+            row +
+            this.#failures.map(failure => formatFailedTest(failure)).join('')
+        );
+    }
+
+    /** The errors of the file's failures, each under its file and titles */
+    formatErrors(): string[] {
+        return this.#failures.map(({ titles, error }) => {
+            const title = [this.#label, ...titles].join(' > ');
+
+            return `${FAIL} ${title}\n${error}\n`;
+        });
+    }
+}
+
+/** The line of a failed test under its file's row. The file itself has none. */
+function formatFailedTest({ titles, duration }: Failure): string {
+    if (titles.length === 0) {
+        return '';
+    }
+
+    const time = styleText('gray', formatDuration(duration));
+
+    return `   ${styleText('red', '×')} ${titles.join(' > ')} ${time}\n`;
+}
+
+/** The test file of an event's test, or else the file that declared it */
+function testFile(data: {
+    file?: string;
+    entryFile?: string;
+}): string | undefined {
+    return data.entryFile ?? data.file;
+}
+
+/** A line of the totals, whose labels end in the same column */
+function formatTotal(label: string, value: string): string {
+    return `${styleText('gray', label.padStart(11))}  ${value}\n`;
+}
+
+/** The report of a run, which takes node:test's events and gives the text to print */
+class Report {
+    readonly #cwd: string;
+    readonly #projects = new Projects();
+    #files = new Counts();
+    #tests = new Counts();
+    #errors: string[] = [];
+    /** The file whose tests are being reported */
+    #current: FileResults | undefined;
+
+    /** Names the files that have no project from `cwd` */
+    constructor(cwd: string) {
+        this.#cwd = cwd;
+    }
+
+    /** What to print for the event, which is nothing for most */
+    print(event: TestEvent): string {
+        switch (event.type) {
+            case 'test:start': {
+                return this.#in(testFile(event.data), results => {
+                    results.start(event.data);
+                });
+            }
+            case 'test:pass':
+            case 'test:fail': {
+                return this.#in(testFile(event.data), results => {
+                    results.add(event);
+                });
+            }
+            case 'test:summary': {
+                return this.#summarize(event.data);
+            }
+            case 'test:diagnostic': {
+                const { file, message } = event.data;
+
+                return file === undefined && TOTAL.test(message)
+                    ? ''
+                    : `${styleText('blue', `ℹ ${message}`)}\n`;
+            }
+            case 'test:stdout':
+            case 'test:stderr': {
+                return event.data.message;
+            }
+            case 'test:coverage': {
+                return formatCoverage(event);
+            }
+            default: {
+                return '';
+            }
+        }
+    }
+
+    /**
+     * Has `record` take an event of the file's results, after ending the
+     * file before it, whose row it returns
+     */
+    #in(
+        file: string | undefined,
+        record: (results: FileResults) => void
+    ): string {
+        if (file === undefined) {
+            return '';
+        }
+
+        const ended = this.#current?.file() === file ? '' : this.#endFile();
+        this.#current ??= new FileResults(
+            file,
+            this.#projects.of(file),
+            this.#cwd
+        );
+        record(this.#current);
+
+        return ended;
+    }
+
+    /** The row of the current file, whose results go to the totals */
+    #endFile(): string {
+        const results = this.#current;
+        if (results === undefined) {
+            return '';
+        }
+        this.#current = undefined;
+
+        this.#tests.addAll(results.counts());
+        if (results.failed()) {
+            this.#files.failed++;
+        } else {
+            this.#files.passed++;
+        }
+        this.#errors.push(...results.formatErrors());
+
+        return results.formatRow();
+    }
+
+    /**
+     * Ends the file that a summary is of, if its tests are the last
+     * reported, or the run, if the summary is of all files. Under
+     * `--watch`, another run follows, so the totals start over.
+     */
+    #summarize({
+        file,
+        duration_ms: duration
+    }: {
+        file?: string;
+        duration_ms: number;
+    }): string {
+        if (file !== undefined) {
+            return this.#current?.file() === file ? this.#endFile() : '';
+        }
+
+        const row = this.#endFile();
+        const errors =
+            this.#errors.length === 0
+                ? ''
+                : `\n${styleText(['bold', 'red'], ` Failed Tests ${this.#errors.length}`)}\n\n${this.#errors.join('\n')}`;
+        const totals =
+            formatTotal('Test Files', this.#files.format()) +
+            formatTotal('Tests', this.#tests.format()) +
+            formatTotal('Duration', formatDuration(duration));
+
+        this.#errors = [];
+        this.#files = new Counts();
+        this.#tests = new Counts();
+
+        return `${row}${errors}\n${totals}\n`;
+    }
+}
+
+/** The table of the run's coverage, which node:test's `spec` reporter formats */
+function formatCoverage(
+    event: Extract<TestEvent, { type: 'test:coverage' }>
+): string {
+    const reporter = new spec();
+    reporter.write(event);
+
+    return (reporter.read() as string | null) ?? '';
+}
+
+/**
+ * The reporter, as `--test-reporter=hypotes/reporter` loads it, and as the
+ * stream of node:test's `run()` composes it. Besides the files' rows, the
+ * errors and the totals, it prints what tests write to stdout and stderr,
+ * their diagnostics, and the coverage as node:test's `spec` does.
+ */
+export default async function* reporter(
+    source: AsyncIterable<TestEvent>
+): AsyncGenerator<string, void> {
+    const report = new Report(process.cwd());
+
+    for await (const event of source) {
+        const text = report.print(event);
+
+        if (text !== '') {
+            yield text;
+        }
+    }
+}
