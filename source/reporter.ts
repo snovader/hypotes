@@ -13,7 +13,7 @@
 // start, or the run ends. It reports a summary of a file too, but only from a
 // process of the file's own, and not for a file that failed to load, so the
 // counts here are of the tests' own events, counted as node:test counts
-// them.
+// them, but for the test that it reports in place of a file.
 //
 // An event's `file` is where its test was declared, which is another module
 // if a helper declared it, as a rule tester does. Its `entryFile` is the
@@ -202,27 +202,30 @@ class FileResults {
     add(result: TestResult): void {
         const { name, nesting, details } = result.data;
 
+        const isFile = this.#isFile(name, nesting);
+
         if (nesting === 0) {
             this.#duration += details.duration_ms;
         }
-        if (details.type !== 'suite') {
+        if (details.type !== 'suite' && !isFile) {
             this.#counts.add(result);
         }
         if (result.type === 'test:fail') {
-            this.#addFailure(result, this.#titles(name, nesting));
+            this.#addFailure(
+                result,
+                isFile ? [] : [...this.#running.slice(0, nesting), name]
+            );
         }
     }
 
     /**
-     * The names of a test's suites and its own. A file that fails as it
-     * loads is reported as a test named by its path, which the row has.
+     * Whether a result is of the file itself, rather than of a test in it.
+     * node:test reports a file that fails as it loads, or none of whose
+     * tests ran, as a test named by its path. It isn't counted as a test
+     * here: its failure fails the file, under the row's own title.
      */
-    #titles(name: string, nesting: number): string[] {
-        if (nesting === 0 && resolve(this.#cwd, name) === this.#file) {
-            return [];
-        }
-
-        return [...this.#running.slice(0, nesting), name];
+    #isFile(name: string, nesting: number): boolean {
+        return nesting === 0 && resolve(this.#cwd, name) === this.#file;
     }
 
     #addFailure({ data }: TestFail, titles: string[]): void {

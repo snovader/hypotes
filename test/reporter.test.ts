@@ -25,6 +25,8 @@ interface RunOptions {
     readonly colors?: boolean;
     /** node:test's `--test-isolation` */
     readonly isolation?: 'none' | 'process';
+    /** node:test's `--test-name-pattern`, which runs the tests that it matches */
+    readonly namePattern?: string;
 }
 
 /**
@@ -33,7 +35,7 @@ interface RunOptions {
  */
 async function report(
     files: readonly string[],
-    { colors = false, isolation = 'process' }: RunOptions = {}
+    { colors = false, isolation = 'process', namePattern }: RunOptions = {}
 ): Promise<string> {
     const env = { ...process.env };
     // Which tells node:test that it runs in a test file's process
@@ -49,6 +51,7 @@ async function report(
         '--test',
         `--test-isolation=${isolation}`,
         `--test-reporter=${import.meta.resolve('hypotes/reporter')}`,
+        ...(namePattern === undefined ? [] : [`--test-name-pattern=${namePattern}`]),
         ...files
     ];
     const stdout = await new Promise<string>(resolve => {
@@ -71,10 +74,11 @@ function totals(text: string): string[] {
     return text.split('\n').filter(line => /^ +(?:Test Files|Tests|Duration) {2}/u.test(line));
 }
 
-const [plain, shared, colored] = await Promise.all([
+const [plain, shared, colored, filtered] = await Promise.all([
     report([MIXED, DEEP, PASSES, BROKEN, HOOK, THROUGH]),
     report([MIXED, PASSES], { isolation: 'none' }),
-    report([MIXED, PASSES], { colors: true })
+    report([MIXED, PASSES], { colors: true }),
+    report([DEEP, PASSES], { namePattern: 'adds' })
 ]);
 
 describe('a run of files', () => {
@@ -84,7 +88,7 @@ describe('a run of files', () => {
             '   × outer > inner > fails 0ms',
             ' ✓ |@fixture/alpha| test/nested/deep.ts (1 test) 0ms',
             ' ✓ |@fixture/alpha| test/passes.ts (3 tests) 0ms',
-            ' ❯ |beta| broken.ts (1 test | 1 failed) 0ms',
+            ' ❯ |beta| broken.ts (0 tests) 0ms',
             ' ❯ |beta| hook.ts (1 test) 0ms',
             '   × suite 0ms',
             ' ✓ |beta| through.ts (1 test) 0ms'
@@ -98,7 +102,7 @@ describe('a run of files', () => {
     it('should print the totals of files and tests', () => {
         expect(totals(plain)).toStrictEqual([
             ' Test Files  3 failed | 3 passed (6)',
-            '      Tests  2 failed | 7 passed | 1 skipped | 2 todo (12)',
+            '      Tests  1 failed | 7 passed | 1 skipped | 2 todo (11)',
             '   Duration  0ms'
         ]);
     });
@@ -115,6 +119,13 @@ describe('a run of files', () => {
     it("should print a file that fails as it loads, and what it wrote to stderr, without a test's title", () => {
         expect(plain).toContain('Error: broken as it loads');
         expect(plain).toContain(' FAIL |beta| broken.ts\n');
+    });
+
+    it('should not count a file none of whose tests ran as a test', () => {
+        expect(rows(filtered)).toStrictEqual([
+            ' ✓ |@fixture/alpha| test/nested/deep.ts (0 tests) 0ms',
+            ' ✓ |@fixture/alpha| test/passes.ts (1 test) 0ms'
+        ]);
     });
 
     it('should not report a test to do that fails as a failure', () => {
