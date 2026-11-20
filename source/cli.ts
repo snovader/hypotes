@@ -9,15 +9,15 @@
 // flags, such as `--watch` and `--test-name-pattern`, work as they do there.
 //
 // `--project` is the one flag of its own, after Vitest's. node:test can't
-// select files by their package, so with `--project` this finds the test
-// files, as `test-files.ts` says, and names those of the selected projects
-// to node:test. It then has to tell patterns from flags, which it does by
-// the leading `-`: a flag's value has to follow a `=`, as in
+// select files by their package, so with `--project` this names the
+// selected projects' directories or files to node:test, as `test-files.ts`
+// says. It then has to tell patterns from flags, which it does by the
+// leading `-`: a flag's value has to follow a `=`, as in
 // `--test-name-pattern=adds`, or it's taken for a pattern.
 import { spawn, type ChildProcess } from 'node:child_process';
 import process from 'node:process';
 import { ProjectFilter } from './project-filter.ts';
-import { defaultPattern, findProjectFiles } from './test-files.ts';
+import { defaultPattern, TestFiles } from './test-files.ts';
 
 const USAGE = `Usage: hypotes [--project <name>]... [node's flags] [files or patterns]
 
@@ -89,8 +89,8 @@ function parseArguments(args: readonly string[]): Arguments {
 }
 
 /**
- * Node's flags among the arguments, and the test files of the selected
- * projects in place of the patterns
+ * Node's flags among the arguments, and what names the test files of the
+ * selected projects in place of the patterns
  */
 function selectFiles(
     projects: readonly string[],
@@ -103,21 +103,24 @@ function selectFiles(
     const stripsTypes = !flags.some(flag =>
         /^--no-(?:experimental-)?strip-types$/u.test(flag)
     );
-    const files = findProjectFiles(
-        patterns.length === 0 ? [defaultPattern(stripsTypes)] : patterns,
-        new ProjectFilter(projects),
-        cwd
-    );
+    const testFiles = new TestFiles(cwd, new ProjectFilter(projects));
+    const named =
+        patterns.length === 0
+            ? testFiles.ofProjects(defaultPattern(stripsTypes))
+            : testFiles.matching(patterns);
 
-    if (files.length === 0) {
-        // As node:test exits when it finds no file of a pattern
+    if (named.length === 0) {
+        // Rather than have node:test look for every test file, as it does
+        // when it's named none
+        const known = testFiles.projectNames().join(', ');
+
         throw new UsageError(
-            `found no test files of --project ${projects.join(', ')}`,
+            `found no test files of --project ${projects.join(', ')}, among the projects ${known}`,
             1
         );
     }
 
-    return [...flags, ...files];
+    return [...flags, ...named];
 }
 
 /** The arguments that Node runs the tests with */
@@ -167,6 +170,33 @@ function follow(node: ChildProcess): void {
     });
 }
 
+function startFailure(error: unknown, args: readonly string[]): string {
+    const code = (error as { code?: unknown }).code;
+
+    return code === 'E2BIG' || code === 'ENAMETOOLONG'
+        ? `the command that names the test files to Node is too long, with ${args.length} arguments. Select fewer files with --project or a pattern.`
+        : `couldn't start Node: ${String(error)}`;
+}
+
+/**
+ * Starts Node. A command can only be so long, which the test files of a
+ * project that are named one by one can exceed: the system then refuses to
+ * start it.
+ */
+function start(args: readonly string[]): ChildProcess {
+    try {
+        return spawn(process.execPath, args, { stdio: 'inherit' }).on(
+            'error',
+            error => {
+                process.stderr.write(`hypotes: ${startFailure(error, args)}\n`);
+                process.exitCode = 1;
+            }
+        );
+    } catch (error) {
+        throw new UsageError(startFailure(error, args), 1);
+    }
+}
+
 function main(): void {
     const parsed = parseArguments(process.argv.slice(2));
 
@@ -175,10 +205,7 @@ function main(): void {
         return;
     }
 
-    const node = spawn(process.execPath, nodeArguments(parsed, process.cwd()), {
-        stdio: 'inherit'
-    });
-    follow(node);
+    follow(start(nodeArguments(parsed, process.cwd())));
 }
 
 try {

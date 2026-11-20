@@ -123,9 +123,13 @@ intent, not a requirement to preserve every detail.
   starts `node --test` with the preload and the reporter, and passes its
   other arguments on unread, so it doesn't parse node:test's flags or keep a
   list of them. Its one flag is Vitest's `--project`. node:test can't select
-  files by their package, so `test-files.ts` finds them with node:test's
-  default pattern, which it copies: check it against Node's when Node's
-  documentation of it changes. The command ends as Node does, and passes on
+  files by their package, so `test-files.ts` names each selected project's
+  directory to it, with node:test's default pattern, which it copies: check
+  it against Node's when Node's documentation of it changes. It lists a
+  project's files only where a directory's pattern would take in another
+  project's, since a list grows with the files, and a command can only be
+  so long. node:test takes each argument for a glob pattern, so what's
+  named to it is escaped. The command ends as Node does, and passes on
   the signals that it gets. Don't add what node:test has a flag for.
 - Where node:test makes the behavior differ from Vitest's, document the
   difference in the module that has it, as `hooks.ts` does for the order of

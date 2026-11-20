@@ -7,7 +7,10 @@ import { describe, expect, it } from 'hypotes';
 
 const CLI = fileURLToPath(import.meta.resolve('hypotes/cli'));
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-/** Two packages, `@fixture/alpha` and `beta`, and `@fixture/lib` in the second */
+/**
+ * The packages `@fixture/alpha`, `beta`, with `@fixture/lib` inside it, and
+ * `bracket`, in a directory whose name means something in a glob pattern
+ */
 const PROJECTS = fileURLToPath(new URL('fixtures/projects', import.meta.url));
 
 /** The environment of a run whose output goes to a pipe, without colours */
@@ -61,8 +64,35 @@ describe('hypotes', () => {
         expect(files(stdout)).toStrictEqual([
             '|beta| broken.ts',
             '|beta| hook.ts',
+            '|beta| test/in-beta.ts',
             '|beta| through.ts'
         ]);
+    });
+
+    it('should run only the files of a project that has another inside it', async () => {
+        const { stdout, code } = await hypotes(['--project', 'beta']);
+
+        expect(files(stdout)).toStrictEqual(['|beta| test/in-beta.ts']);
+        expect(code).toBe(0);
+    });
+
+    it('should run the files of each selected project, one inside another too', async () => {
+        const { stdout } = await hypotes(['--project', '*', '--project', '!@fixture/alpha']);
+
+        expect(files(stdout)).toStrictEqual([
+            '|bracket| test/in-bracket.ts',
+            '|beta| test/in-beta.ts'
+        ]);
+    });
+
+    it('should run a project in a directory whose name reads as a glob pattern', async () => {
+        const [byDefault, byPattern] = await Promise.all([
+            hypotes(['--project', 'bracket']),
+            hypotes(['--project', 'bracket', '**/in-*.ts'])
+        ]);
+
+        expect(files(byDefault.stdout)).toStrictEqual(['|bracket| test/in-bracket.ts']);
+        expect(files(byPattern.stdout)).toStrictEqual(['|bracket| test/in-bracket.ts']);
     });
 
     it('should take * in the name of a project, and leave out one after !', async () => {
@@ -110,7 +140,10 @@ describe('hypotes', () => {
         const { stdout, stderr, code } = await hypotes(['--project', 'gamma']);
 
         expect(stdout).toBe('');
-        expect(stderr).toBe('hypotes: found no test files of --project gamma\n');
+        expect(stderr).toBe(
+            'hypotes: found no test files of --project gamma, among the projects ' +
+                '@fixture/alpha, @fixture/lib, beta, bracket, hypotes\n'
+        );
         expect(code).toBe(1);
     });
 

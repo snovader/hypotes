@@ -6,9 +6,10 @@ Tests written with `describe`, `it`, `expect` and `vi` from hypotes run with
 `node --test`. There is no bundler and no config file, and node:test stays
 the runner: Node runs the test files as they are, and node:test's reporters,
 watch mode and coverage apply to them. The
-[`hypotes` command](#the-hypotes-command) is a shorter way to call it. It runs TypeScript by
-[stripping its types](https://nodejs.org/api/typescript.html#type-stripping),
-so a test file, and what it imports, has to run on Node as it's written.
+[`hypotes` command](#the-hypotes-command) is a shorter way to call it. It runs
+TypeScript by [stripping its
+types](https://nodejs.org/api/typescript.html#type-stripping), so a test file,
+and what it imports, has to run on Node as it's written.
 
 Use hypotes when you want Vitest's matchers, spies, module mocks and fake
 timers, but node:test as the runner. A test file that uses what both have
@@ -515,17 +516,32 @@ nearest `package.json` above it that has a `name`.
 | `hypotes --project @shop/web "**/*.spec.js"`        | `@shop/web`, among those of a pattern |
 
 node:test can't select files by their package, so with `--project` the
-command finds the test files itself and names them to node:test. That has
-costs, which a run without `--project` doesn't have:
+command names each selected project's directory to node:test, as a pattern.
+node:test then finds the test files in it, as it does without `--project`.
 
 - **Flags take their values after `=`.** Write
-  `--test-name-pattern=adds`, not `--test-name-pattern adds`: the command
-  takes an argument without a leading `-` for a pattern of files.
+  `--test-name-pattern=adds`, not `--test-name-pattern adds`: with
+  `--project`, the command takes an argument without a leading `-` for a
+  pattern of files.
+- **No project matches.** The command fails, and lists the projects that it
+  found.
+
+In two cases a directory's pattern would take in files of other projects,
+so the command finds the project's files itself and names them one by one:
+
+- with a pattern of your own, as in the last row of the table;
+- for a project with another package inside its directory that isn't
+  selected, such as the root package of a repository.
+
+That has costs:
+
 - **`--watch` watches the files that it found.** A test file added later
   runs after a restart.
-- **Long lists of files.** Each file is an argument to Node. Windows limits
-  a command to about 32,000 characters, which a project of several hundred
-  test files can exceed.
+- **A command can only be so long.** Each file is an argument to Node.
+  macOS and Linux take about a megabyte of them, and Windows 32,767
+  characters, which a few hundred files can exceed. The command then fails,
+  and says so. Select fewer files, or select the packages inside the
+  project too.
 
 ## Reporter
 
