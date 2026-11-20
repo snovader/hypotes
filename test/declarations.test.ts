@@ -100,7 +100,10 @@ const [
     coloredResults,
     prependedResults,
     mappedPrependedResults,
-    invalidMapResults
+    invalidMapResults,
+    charsetMapResults,
+    codeAfterMapResults,
+    sectionsMapResults
 ] = await Promise.all([
     resultsOf(DECLARATIONS),
     resultsOf(ONLY, { only: true }),
@@ -113,7 +116,10 @@ const [
     resultsOf(COLORS, { colors: true }),
     resultsOf(PREPENDED, { hook: PREPEND_LINES, register: true }),
     resultsOf(PREPENDED, { hook: PREPEND_LINES, register: true, sourceMaps: true }),
-    resultsOf(PREPENDED, { hook: `${PREPEND_LINES}?map=invalid`, register: true })
+    resultsOf(PREPENDED, { hook: `${PREPEND_LINES}?map=invalid`, register: true }),
+    resultsOf(PREPENDED, { hook: `${PREPEND_LINES}?map=charset`, register: true }),
+    resultsOf(PREPENDED, { hook: `${PREPEND_LINES}?map=code-after`, register: true }),
+    resultsOf(PREPENDED, { hook: `${PREPEND_LINES}?map=sections`, register: true })
 ]);
 
 /** The start of the error that Vitest 4 throws for options after the function */
@@ -253,7 +259,9 @@ describe('declarations in a module that mocks modules', () => {
 
     it.each([
         ['', prependedResults],
-        [' with --enable-source-maps', mappedPrependedResults]
+        [' with --enable-source-maps', mappedPrependedResults],
+        [' with charset=utf-8, followed by CRLF and whitespace', charsetMapResults],
+        [' in two sections', sectionsMapResults]
     ])(
         'should place its tests where they are after a hook that maps its code%s',
         (_, prepended) => {
@@ -267,27 +275,46 @@ describe('declarations in a module that mocks modules', () => {
         }
     );
 
-    it('should report a failure where the module fails after a hook that maps its code', () => {
-        const result = prependedResults.get(
-            'a failure in a module that a hook maps points at its line'
-        );
-        const line = lineOf("expect(value()).toBe('original')", PREPENDED);
+    it.each([
+        ['', prependedResults],
+        [' in two sections', sectionsMapResults]
+    ])(
+        'should report a failure where the module fails after a hook that maps its code%s',
+        (_, prepended) => {
+            const result = prepended.get(
+                'a failure in a module that a hook maps points at its line'
+            );
+            const line = lineOf("expect(value()).toBe('original')", PREPENDED);
 
-        expect(result?.passed).toBe(false);
-        expect(result?.error).toContain(`${PREPENDED}:${line}:`);
-    });
+            expect(result?.passed).toBe(false);
+            expect(result?.error).toContain(`${PREPENDED}:${line}:`);
+        }
+    );
 
-    it("should place its tests in the code as it's given after a hook whose map isn't JSON", () => {
-        const line = lineOf("it('mocks are hoisted after a hook that maps its code'", PREPENDED);
+    it.each([
+        ["isn't JSON", invalidMapResults],
+        ['is followed by code', codeAfterMapResults]
+    ])(
+        "should place its tests in the code as it's given after a hook whose map %s",
+        (_, prepended) => {
+            const line = lineOf(
+                "it('mocks are hoisted after a hook that maps its code'",
+                PREPENDED
+            );
 
-        expect(
-            invalidMapResults.get('mocks are hoisted after a hook that maps its code')
-        ).toMatchObject({
-            passed: true,
-            file: PREPENDED,
-            // Below the hook's two lines
-            line: line + 2
-        });
+            expect(
+                prepended.get('mocks are hoisted after a hook that maps its code')
+            ).toMatchObject({
+                passed: true,
+                file: PREPENDED,
+                // Below the hook's two lines
+                line: line + 2
+            });
+        }
+    );
+
+    it('should keep the code that follows the map of a hook', () => {
+        expect(codeAfterMapResults.get('code after the map runs')?.passed).toBe(true);
     });
 
     it('should fail the module without hypotes/register', () => {
