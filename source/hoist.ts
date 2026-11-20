@@ -17,8 +17,14 @@
 // `export * from` as the module loads, this one rejects it: a module's
 // exports are named before it runs, so that one would load before the mocks.
 //
+// A hook that runs after this one, through its `nextLoad`, such as one that
+// strips TypeScript, can end the module with an inline source map of its
+// own. Node reads only a module's last source map, so this one leaves out the
+// comment that carried that map, and chains it, as `source-map.ts` says.
+//
 // oxc-parser parses the module, and magic-string writes it and its source
 // map: optional peer dependencies, which load once a module needs them.
+import { Buffer } from 'node:buffer';
 import {
     createRequire,
     getSourceMapsSupport,
@@ -29,6 +35,12 @@ import { fileURLToPath } from 'node:url';
 import type * as MagicStringModule from 'magic-string';
 import type * as Oxc from 'oxc-parser';
 import { MOCKS_KEY } from './mocks.ts';
+import {
+    chainSourceMap,
+    splitInlineMap,
+    type ChainedSourceMap,
+    type MappedCode
+} from './source-map.ts';
 
 type MagicString = MagicStringModule.MagicString;
 
@@ -59,6 +71,7 @@ type Load = ExportFrom | Oxc.ExportAllDeclaration | Oxc.ImportDeclaration;
 
 interface Dependencies {
     readonly MagicString: typeof MagicStringModule.MagicString;
+    readonly SourceMap: typeof MagicStringModule.SourceMap;
     readonly parseSync: typeof Oxc.parseSync;
     readonly Visitor: typeof Oxc.Visitor;
 }
@@ -108,12 +121,12 @@ export function hoistModule(url: string, loaded: LoadFnOutput): LoadFnOutput {
         return loaded;
     }
 
-    const code = typeof source === 'string' ? source : decoder.decode(source);
-    if (!MOCK_CALL.test(code)) {
+    const text = typeof source === 'string' ? source : decoder.decode(source);
+    if (!MOCK_CALL.test(text)) {
         return loaded;
     }
 
-    const hoisted = hoistMocks(code, url);
+    const hoisted = hoistMocks(splitInlineMap(text), url);
     if (hoisted === undefined) {
         return loaded;
     }
@@ -132,9 +145,9 @@ function loadDependencies(): Dependencies {
     if (dependencies === undefined) {
         try {
             const { parseSync, Visitor } = require('oxc-parser') as typeof Oxc;
-            const { MagicString } =
+            const { MagicString, SourceMap } =
                 require('magic-string') as typeof MagicStringModule;
-            dependencies = { MagicString, parseSync, Visitor };
+            dependencies = { MagicString, parseSync, SourceMap, Visitor };
         } catch (error) {
             if ((error as { code?: unknown }).code !== 'MODULE_NOT_FOUND') {
                 throw error;
@@ -150,11 +163,15 @@ function loadDependencies(): Dependencies {
 }
 
 /**
- * The module's code, with its mocks hoisted, and its source map, unless it
- * doesn't parse, which Node reports as it compiles it, or doesn't call `vi`
+ * The module's code, with its mocks hoisted, and its source map, chained to
+ * the map that the code came with, unless it doesn't parse, which Node
+ * reports as it compiles it, or doesn't call `vi`
  */
-function hoistMocks(code: string, url: string): string | undefined {
-    const { MagicString, parseSync, Visitor } = loadDependencies();
+function hoistMocks(
+    { code, map: incoming }: MappedCode,
+    url: string
+): string | undefined {
+    const { MagicString, SourceMap, parseSync, Visitor } = loadDependencies();
     const path = fileURLToPath(url);
     const { errors, module, program } = parseSync(path, code, {
         sourceType: 'module'
@@ -178,8 +195,36 @@ function hoistMocks(code: string, url: string): string | undefined {
         hoist(s, program, hoisted, code, path);
     }
 
-    const map = s.generateMap({ source: url, hires: 'boundary' });
-    return `${s.toString()}\n//# sourceMappingURL=${map.toUrl()}\n`;
+    const decoded = s.generateDecodedMap({ source: url, hires: 'boundary' });
+    const map =
+        incoming === undefined
+            ? new SourceMap(decoded)
+            : encodeChained(SourceMap, chainSourceMap(decoded, incoming));
+    return `${s.toString()}\n//# sourceMappingURL=${dataUrlOf(map)}\n`;
+}
+
+/**
+ * The map as a base64 data URL, as magic-string's `toUrl()` writes it, but
+ * with Buffer, which took a third of the time of its `btoa()` of the
+ * escaped JSON
+ */
+function dataUrlOf(map: MagicStringModule.SourceMap): string {
+    const base64 = Buffer.from(map.toString()).toString('base64');
+    return `data:application/json;charset=utf-8;base64,${base64}`;
+}
+
+/**
+ * Encodes a chained map with magic-string's, which takes decoded mappings,
+ * but not the `sourceRoot` of its sources
+ */
+function encodeChained(
+    SourceMap: typeof MagicStringModule.SourceMap,
+    { sourceRoot, ...map }: ChainedSourceMap
+): MagicStringModule.SourceMap {
+    const encoded = new SourceMap(map);
+    return sourceRoot === undefined
+        ? encoded
+        : Object.assign(encoded, { sourceRoot });
 }
 
 /** The module's calls of the methods of `vi` that mock, in order */
