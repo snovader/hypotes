@@ -24,6 +24,7 @@
 //
 // oxc-parser parses the module, and magic-string writes it and its source
 // map: optional peer dependencies, which load once a module needs them.
+import { Buffer } from 'node:buffer';
 import {
     createRequire,
     getSourceMapsSupport,
@@ -199,7 +200,17 @@ function hoistMocks(
         incoming === undefined
             ? new SourceMap(decoded)
             : encodeChained(SourceMap, chainSourceMap(decoded, incoming));
-    return `${s.toString()}\n//# sourceMappingURL=${map.toUrl()}\n`;
+    return `${s.toString()}\n//# sourceMappingURL=${dataUrlOf(map)}\n`;
+}
+
+/**
+ * The map as a base64 data URL, as magic-string's `toUrl()` writes it, but
+ * with Buffer, which took a third of the time of its `btoa()` of the
+ * escaped JSON
+ */
+function dataUrlOf(map: MagicStringModule.SourceMap): string {
+    const base64 = Buffer.from(map.toString()).toString('base64');
+    return `data:application/json;charset=utf-8;base64,${base64}`;
 }
 
 /**
