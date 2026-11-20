@@ -11,6 +11,10 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    ignore:
+      # timers.ts needs the version that Vitest bundles, which package.json
+      # pins: a change of Vitest's packages moves it, by hand
+      - dependency-name: "@sinonjs/fake-timers"
     groups:
       # oxlint requires a version of oxlint-tsgolint, and oxfmt and oxc-parser
       # are released with it

@@ -104,6 +104,22 @@ it('a timeout after the function applies', async () => {
     });
 }, 10);
 
+describe('with fake timers', () => {
+    afterAll(() => {
+        vi.useRealTimers();
+    });
+
+    // oxlint-disable-next-line hypotes/expect-expect -- Fails by its timeout
+    it('a timeout applies while the timers are fake', async () => {
+        vi.useFakeTimers();
+
+        // A fake timer, which nothing advances
+        await new Promise(resolve => {
+            setTimeout(resolve, 1000);
+        });
+    }, 10);
+});
+
 /** The function of a declaration that throws, which never runs */
 function neverRuns(): void {
     expect.fail('ran');

@@ -9,11 +9,11 @@ coverage apply to them. It runs TypeScript by
 [stripping its types](https://nodejs.org/api/typescript.html#type-stripping),
 so a test file, and what it imports, has to run on Node as it's written.
 
-Use hypotes when you want Vitest's matchers, spies and module mocks, but
-node:test as the runner. A test file that uses what both have moves between
-Vitest and hypotes by changing its imports. If you need what only Vitest
-has, such as snapshots, browser mode or Vite's transforms, use Vitest:
-[Left out](#left-out) lists what hypotes doesn't have.
+Use hypotes when you want Vitest's matchers, spies, module mocks and fake
+timers, but node:test as the runner. A test file that uses what both have
+moves between Vitest and hypotes by changing its imports. If you need what
+only Vitest has, such as snapshots, browser mode or Vite's transforms, use
+Vitest: [Left out](#left-out) lists what hypotes doesn't have.
 
 hypotes needs Node 24.13.1 or later.
 
@@ -271,9 +271,21 @@ it, apart from the differences below.
 - `beforeAll`, `afterAll`, `beforeEach` and `afterEach`.
 - `expect`, with Vitest's matchers and asymmetric matchers,
   `expect.extend()`, `expect.addEqualityTesters()` and `expect.fail()`.
-- `vi`, with these members: `fn`, `spyOn`, `mocked`, `isMockFunction`,
-  `clearAllMocks`, `resetAllMocks`, `restoreAllMocks`, `mock`, `unmock`,
-  `doMock`, `doUnmock`, `hoisted` and `importActual`.
+- `vi`, with these members:
+  - For spies: `fn`, `spyOn`, `mocked`, `isMockFunction`, `clearAllMocks`,
+    `resetAllMocks` and `restoreAllMocks`.
+  - For module mocks: `mock`, `unmock`, `doMock`, `doUnmock`, `hoisted` and
+    `importActual`.
+  - For fake timers: `useFakeTimers`, `useRealTimers`, `isFakeTimers`,
+    `advanceTimersByTime`, `advanceTimersByTimeAsync`,
+    `advanceTimersToNextTimer`, `advanceTimersToNextTimerAsync`,
+    `advanceTimersToNextFrame`, `runAllTimers`, `runAllTimersAsync`,
+    `runOnlyPendingTimers`, `runOnlyPendingTimersAsync`, `runAllTicks`,
+    `getTimerCount`, `clearAllTimers`, `setSystemTime`,
+    `getMockedSystemTime`, `getRealSystemTime` and `setTimerTickMode`.
+  - For globals and environment variables: `stubGlobal`, `unstubAllGlobals`,
+    `stubEnv` and `unstubAllEnvs`.
+  - For waiting: `waitFor` and `waitUntil`.
 
 ### `hypotes/fast-check`
 
@@ -328,9 +340,7 @@ in another form. Of `vi`, hypotes has only the members that
 | `toMatchSnapshot` and the other snapshot matchers, `expect.addSnapshotSerializer` | node:test's `t.assert.snapshot()`                                             |
 | `expectTypeOf`, `assertType`                                                      | The `expect-type` package, which Vitest's `expectTypeOf` comes from           |
 | `assert`, `chai`, `should`                                                        | The `chai` package, which Vitest's come from                                  |
-| `vi.useFakeTimers`, `vi.setSystemTime` and the other members for timers           | node:test's `mock.timers`                                                     |
-| `vi.stubGlobal`                                                                   | node:test's `mock.property()`, for a global that exists                       |
-| `vi.stubEnv`, `vi.resetModules`, `vi.waitFor`, `vi.waitUntil`                     | None                                                                          |
+| `vi.resetModules`                                                                 | None                                                                          |
 | `vi.importMock`, `vi.mockObject`, automocking, `__mocks__` directories            | A factory, as in `vi.mock(path, factory)`                                     |
 
 ## Differences from Vitest
@@ -362,6 +372,33 @@ elements alone, and objects by their string keys. So do the matchers that
 compare as `toEqual` does, such as `toContainEqual`, `toHaveProperty` and
 `toHaveBeenCalledWith`. Two things that make values differ in Vitest are
 ignored: properties set on an array besides its elements, and symbol keys.
+
+### Fake timers, stubs and waits
+
+The timers are Vitest's, on the version of
+[`@sinonjs/fake-timers`](https://github.com/sinonjs/fake-timers) that Vitest
+has, and take the options of
+[`vi.useFakeTimers()`](https://vitest.dev/api/vi#vi-usefaketimers).
+node:test's `mock.timers` is another clock, so a test fakes the timers with
+one of the two.
+
+- **Options.** Vitest reads the default options from `fakeTimers` in its
+  configuration. hypotes has no configuration, so each call of
+  `vi.useFakeTimers()` passes the options that it changes.
+- **Nothing is undone between tests.** Vitest's `unstubGlobals` and
+  `unstubEnvs` options undo the stubs after each test. Here an `afterEach`
+  calls `vi.unstubAllGlobals()` and `vi.unstubAllEnvs()`, and
+  `vi.useRealTimers()` as in Vitest. With `--test-isolation=none`, test
+  files share a process, so fake timers and stubs that a file leaves stay
+  for the files that run after it.
+- **`process.nextTick`.** `toFake: ['nextTick']` fakes it. Vitest throws
+  instead in its default pool, `forks`.
+- **`import.meta.env`.** `vi.stubEnv()` changes `process.env`. Vitest changes
+  `import.meta.env` too, which Vite defines and Node doesn't.
+- **A wait ends when it settles.** In Vitest, a `vi.waitUntil()` whose
+  function throws on its first call keeps calling the function until its
+  timeout, and moves fake timers forward each time, in later tests too.
+  hypotes stops calling it.
 
 ### Module mocks
 
