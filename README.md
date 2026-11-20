@@ -391,6 +391,12 @@ one of the two.
   `vi.useRealTimers()` as in Vitest. With `--test-isolation=none`, test
   files share a process, so fake timers and stubs that a file leaves stay
   for the files that run after it.
+- **A clock that moves by itself keeps a test file running.** With
+  `shouldAdvanceTime`, or a tick mode besides `manual`, the fake clock moves
+  on a real timer. node:test waits for it, so a file that leaves such a
+  clock on never ends. Call `vi.useRealTimers()` in an `afterEach` or an
+  `afterAll`. Vitest ends the file's worker instead, so the file ends there
+  without it.
 - **`process.nextTick`.** `toFake: ['nextTick']` fakes it. Vitest throws
   instead in its default pool, `forks`.
 - **`import.meta.env`.** `vi.stubEnv()` changes `process.env`. Vitest changes

@@ -144,6 +144,25 @@ describe('vi.waitUntil', () => {
         expect([throws, rejects].map(callback => callback.mock.calls.length)).toEqual([1, 1]);
     });
 
+    property.prop([fc.constantFrom(false, 0, '', null, undefined), fc.boolean()], { numRuns: 10 })(
+        "should reject with its timeout's error at once, when the function's error is falsy",
+        async (falsy, rejects) => {
+            const callback = vi.fn<() => Promise<never>>(() => {
+                if (rejects) {
+                    // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- A falsy error is what is tested
+                    return Promise.reject(falsy);
+                }
+                // oxlint-disable-next-line typescript/only-throw-error -- As above
+                throw falsy;
+            });
+
+            const error = await rejectionOf(vi.waitUntil(callback, { message: 'the flag' }));
+
+            expect(String(error)).toBe('Error: the flag: Timed out in waitUntil!');
+            expect(callback).toHaveBeenCalledOnce();
+        }
+    );
+
     it('should reject with a timeout once it passes, after what is waited for', async () => {
         const options = { interval: 1, timeout: 20, message: 'the flag' };
 

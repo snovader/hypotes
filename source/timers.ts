@@ -17,6 +17,10 @@
 //   passes what it changes.
 // - Vitest refuses to fake `nextTick` in a child process, which its runner
 //   talks to its workers through. A test file is free to fake it here.
+// - Vitest ends a test file's worker once its tests end. node:test waits for
+//   the file's process to end, which a clock that moves by itself keeps
+//   running, on a real timer: with `shouldAdvanceTime`, or a tick mode
+//   besides `manual`, until `vi.useRealTimers()`.
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import nodeTimers from 'node:timers';
 import nodeTimersPromises from 'node:timers/promises';

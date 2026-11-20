@@ -12,8 +12,8 @@
 // - Vitest names the wait in its trace timeline, which needs its runner.
 // - A wait stops calling the function once it settles. Vitest's
 //   `vi.waitUntil()` keeps its interval until the timeout when the function
-//   throws or rejects on its first call, and so moves the fake timers of
-//   later tests forward.
+//   throws on its first call, and so moves the fake timers of later tests
+//   forward.
 import { getSafeTimers, setSafeTimers } from '@vitest/utils/timers';
 
 /** How long `vi.waitFor()` and `vi.waitUntil()` wait, and what for */
@@ -52,8 +52,9 @@ export interface WaitAPI {
     /**
      * Calls the function until it returns or resolves with a value that
      * isn't falsy, and resolves with it. It rejects with the function's
-     * error at once, or once the timeout passes. A number for the options
-     * is the timeout.
+     * error at once, or once the timeout passes. An error that is falsy
+     * counts as none, so the wait rejects with its timeout's at once, as
+     * Vitest's does. A number for the options is the timeout.
      */
     waitUntil<T>(
         callback: () => T | Promise<T>,
@@ -229,18 +230,23 @@ class Wait<T> {
         if (this.#policy.retriesErrors) {
             this.#lastError = error;
         } else {
-            this.#stop();
-            // The function's own error, whatever it threw
-            this.#result.reject(prefixMessage(error, this.#message));
+            this.#fail(error);
         }
     }
 
     #onTimeout(): void {
-        this.#stop();
-        // As Vitest does, a falsy error counts as none
-        // oxlint-disable-next-line typescript/prefer-nullish-coalescing, typescript/strict-boolean-expressions
-        const error = this.#lastError || this.#timedOut;
+        this.#fail(this.#lastError);
+    }
 
+    /**
+     * Rejects the wait with the function's error, or with the timeout's if
+     * that is falsy, which counts as none, as in Vitest
+     */
+    #fail(functionError: unknown): void {
+        // oxlint-disable-next-line typescript/prefer-nullish-coalescing, typescript/strict-boolean-expressions
+        const error = functionError || this.#timedOut;
+
+        this.#stop();
         this.#result.reject(prefixMessage(error, this.#message));
     }
 
