@@ -24,7 +24,7 @@ export default defineConfig({
             {
                 patterns: [
                     {
-                        regex: '^#source/(index|fast-check|register|reporter|oxlint/index)$',
+                        regex: '^#source/(index|cli|fast-check|register|reporter|oxlint/index)$',
                         message:
                             'Import an entry point by the name that the package exports it under.'
                     }

@@ -12,8 +12,10 @@ intent, not a requirement to preserve every detail.
   each test was declared, `mocks.ts` mocks modules, `hoist.ts` hoists the
   mocks of a test file, `timers.ts` fakes timers, `stubs.ts` stubs
   globals, `wait.ts` waits for a function to succeed, `project.ts` finds the
-  package that a test file belongs to, and `reporter.ts` prints node:test's
-  results by file.
+  package that a test file belongs to, `reporter.ts` prints node:test's
+  results by file, `project-filter.ts` selects projects by `--project`'s
+  patterns, `test-files.ts` finds the test files of the selected projects,
+  and `cli.ts` launches Node with them.
 - Search for existing implementations and related abstractions before adding
   code. Always consider reusability and where behavior belongs. Keep a helper
   local when its responsibility is local; share it when it has a coherent role
@@ -117,6 +119,14 @@ intent, not a requirement to preserve every detail.
   itself, the coverage. Its header says which of node:test's events it
   relies on, and why not on the summary of a file. It imports nothing of the
   package's that declares tests, so it reports any node:test run.
+- The `hypotes` command, in `cli.ts`, is a launcher, not a runner: it
+  starts `node --test` with the preload and the reporter, and passes its
+  other arguments on unread, so it doesn't parse node:test's flags or keep a
+  list of them. Its one flag is Vitest's `--project`. node:test can't select
+  files by their package, so `test-files.ts` finds them with node:test's
+  default pattern, which it copies: check it against Node's when Node's
+  documentation of it changes. The command ends as Node does, and passes on
+  the signals that it gets. Don't add what node:test has a flag for.
 - Where node:test makes the behavior differ from Vitest's, document the
   difference in the module that has it, as `hooks.ts` does for the order of
   after hooks and `TestOptions` does for `only`. Leave out what needs Vitest's
@@ -197,6 +207,10 @@ intent, not a requirement to preserve every detail.
   declaration behavior to the fixture and its expected result to the test.
   Some fixture tests fail on purpose. A fixture that mocks modules runs with
   `hypotes/register`, as `test/fixtures/mocks.ts` does.
+- `test/cli.test.ts` runs the command in another process, in
+  `test/fixtures/projects/`, and checks what it prints and how it exits. It
+  resolves the command as `hypotes/cli`, which is exported for that: the
+  bundle's under `yarn test:dist`.
 - `test/reporter.test.ts` runs the fixtures in `test/fixtures/projects/`
   with the reporter in another process, and checks what it prints. Each
   directory there is a package of its own, so its files can't import
@@ -251,7 +265,8 @@ intent, not a requirement to preserve every detail.
   the bundle with the `hypotes-dist` condition, which `yarn test:dist` runs
   the tests on; the published package's, in `publishConfig`, name the bundle.
   A new entry point goes in `rolldown.config.ts`, in both exports, and in
-  the pattern of oxlint's `no-restricted-imports`.
+  the pattern of oxlint's `no-restricted-imports`. `bin` names the command's
+  source, and `publishConfig`'s the bundle's.
 - rolldown resolves the private paths as it bundles, so the bundle has none,
   but tsc keeps them in the declarations. The `imports` of `publishConfig`
   name the declarations in `dist/` for those, and nothing to run.

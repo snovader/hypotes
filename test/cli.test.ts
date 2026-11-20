@@ -1,0 +1,160 @@
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import process from 'node:process';
+import { text } from 'node:stream/consumers';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'hypotes';
+
+const CLI = fileURLToPath(import.meta.resolve('hypotes/cli'));
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+/** Two packages, `@fixture/alpha` and `beta`, and `@fixture/lib` in the second */
+const PROJECTS = fileURLToPath(new URL('fixtures/projects', import.meta.url));
+
+/** The environment of a run whose output goes to a pipe, without colours */
+function environment(): NodeJS.ProcessEnv {
+    const env = { ...process.env };
+    // Which tells node:test that it runs in a test file's process
+    delete env.NODE_TEST_CONTEXT;
+    delete env.FORCE_COLOR;
+
+    return env;
+}
+
+interface Run {
+    readonly stdout: string;
+    readonly stderr: string;
+    readonly code: number | null;
+}
+
+/** A run of the command in the directory, in another process */
+async function hypotes(args: readonly string[], cwd = PROJECTS): Promise<Run> {
+    const child = spawn(process.execPath, [CLI, ...args], { cwd, env: environment() });
+    const [stdout, stderr, [code]] = await Promise.all([
+        text(child.stdout),
+        text(child.stderr),
+        once(child, 'exit') as Promise<[number | null]>
+    ]);
+
+    return { stdout, stderr, code };
+}
+
+/** The files that a report has rows of, with their projects */
+function files(report: string): string[] {
+    return Array.from(report.matchAll(/^ [✓❯] (\S+ \S+) \(/gmu), match => match[1]);
+}
+
+describe('hypotes', () => {
+    it("should run a project's test files, which node:test's default pattern finds", async () => {
+        const { stdout, code } = await hypotes(['--project', '@fixture/alpha']);
+
+        expect(files(stdout)).toStrictEqual([
+            '|@fixture/alpha| test/mixed.ts',
+            '|@fixture/alpha| test/nested/deep.ts',
+            '|@fixture/alpha| test/passes.ts'
+        ]);
+        expect(code).toBe(1);
+    });
+
+    it("should run a project's files among those of the patterns", async () => {
+        const { stdout } = await hypotes(['--project=beta', '**/*.ts']);
+
+        expect(files(stdout)).toStrictEqual([
+            '|beta| broken.ts',
+            '|beta| hook.ts',
+            '|beta| through.ts'
+        ]);
+    });
+
+    it('should take * in the name of a project, and leave out one after !', async () => {
+        const { stdout } = await hypotes([
+            '--project',
+            '@fixture/*',
+            '--project',
+            '!@fixture/alpha',
+            '**/*.ts'
+        ]);
+
+        expect(files(stdout)).toStrictEqual(['|@fixture/lib| declare.ts']);
+    });
+
+    it("should pass node:test's flags on", async () => {
+        const { stdout, code } = await hypotes([
+            '--project',
+            '@fixture/alpha',
+            '--test-name-pattern=adds'
+        ]);
+
+        expect(stdout).toContain('      Tests  1 passed (1)\n');
+        expect(code).toBe(0);
+    });
+
+    it('should leave the reporter to --test-reporter', async () => {
+        const { stdout } = await hypotes([
+            '--project',
+            '@fixture/alpha',
+            '--test-reporter=tap',
+            'alpha/test/passes.ts'
+        ]);
+
+        expect(stdout).toContain('TAP version 13');
+        expect(stdout).not.toContain('|@fixture/alpha|');
+    });
+
+    it('should exit with 0 when the tests pass', async () => {
+        const { code } = await hypotes(['--project', '@fixture/alpha', 'alpha/test/passes.ts']);
+
+        expect(code).toBe(0);
+    });
+
+    it('should fail when no test file is of the projects', async () => {
+        const { stdout, stderr, code } = await hypotes(['--project', 'gamma']);
+
+        expect(stdout).toBe('');
+        expect(stderr).toBe('hypotes: found no test files of --project gamma\n');
+        expect(code).toBe(1);
+    });
+
+    it('should fail when --project has no name', async () => {
+        const { stderr, code } = await hypotes(['--project']);
+
+        expect(stderr).toBe('hypotes: --project needs the name of a project\n');
+        expect(code).toBe(9);
+    });
+
+    it('should print how it is used with --help, and run nothing', async () => {
+        const { stdout, code } = await hypotes(['--help']);
+
+        expect(stdout).toMatch(/^Usage: hypotes /u);
+        expect(code).toBe(0);
+    });
+
+    it('should leave the files to node:test without --project, and preload hypotes/register', async () => {
+        // A file that mocks a module, which fails as it loads without the
+        // preload, and has a test that fails on purpose with it
+        const { stdout } = await hypotes(['test/fixtures/mocks.ts'], ROOT);
+
+        expect(stdout).toContain(' ❯ |hypotes| test/fixtures/mocks.ts (2 tests | 1 failed)');
+    });
+
+    // Windows has no signals: ending a process there ends it at once
+    it.skipIf(process.platform === 'win32')(
+        'should end Node when it is ended, as under --watch',
+        async () => {
+            const child = spawn(
+                process.execPath,
+                [CLI, '--project', '@fixture/alpha', '--watch', 'alpha/test/passes.ts'],
+                { cwd: PROJECTS, env: environment() }
+            );
+            // The report of the first run, after which Node watches
+            await once(child.stdout, 'data');
+            child.kill('SIGTERM');
+
+            // Node holds the pipe too, which ends only once both have ended:
+            // if Node were left running, this would wait until the test
+            // timed out
+            await text(child.stdout);
+
+            expect(child.stdout.readableEnded).toBe(true);
+        }
+    );
+});
