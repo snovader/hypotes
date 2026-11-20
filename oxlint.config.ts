@@ -89,7 +89,11 @@ export default defineConfig({
         {
             // oxlint reads its plugins from default exports, and node:test
             // its reporters
-            files: ['source/oxlint/index.ts', 'source/reporter.ts'],
+            files: [
+                'source/oxlint/index.ts',
+                'source/reporter.ts',
+                'test/fixtures/entry-file.ts'
+            ],
             rules: {
                 'import/no-default-export': 'off'
             }

@@ -504,6 +504,9 @@ each under its file and the titles of its suites:
 Error [AssertionError]: expected 3 to be 2 // Object.is equality
 ```
 
+A file that fails as it loads, and a suite whose hook fails, aren't tests.
+Their errors come first, under `Failed Suites`.
+
 The error is printed as node:test's reporters print it, with its stack.
 
 - **Colours.** Where Node prints colours, a project's name is on a coloured
@@ -518,9 +521,10 @@ The error is printed as node:test's reporters print it, with its stack.
   that the files were found. A file's row is printed once the next file's
   results start, so the row of a slow file holds back those after it.
 - **Tests that a helper declares.** With `--test-isolation=none`, node:test
-  doesn't say which test file a test is from, only where it was declared. A
-  test that a helper in another module declares, as a rule tester does, is
-  then reported under that module.
+  doesn't say which test file a test is from, only where it was declared.
+  Node 24.13.1 doesn't say it with any isolation. A test that a helper in
+  another module declares, as a rule tester does, is then reported under
+  that module, in a row of its own, which counts as a file in the totals.
 - **No `--project`.** The reporter names projects, but doesn't select them.
   To run one package's tests, name its files, as in
   `node --test "packages/api/**/*.test.js"`.

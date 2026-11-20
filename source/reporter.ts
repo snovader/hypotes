@@ -19,7 +19,9 @@
 // if a helper declared it, as a rule tester does. Its `entryFile` is the
 // test file, which the rows are of. node:test sets it only for a file that
 // runs in a process of its own, so with `--test-isolation=none` such a test
-// goes under the module that declared it.
+// goes under the module that declared it. Node 24.13.1 doesn't set it at
+// all, so there such a test goes under that module in a process of its own
+// too.
 import { relative, resolve, sep } from 'node:path';
 import process from 'node:process';
 import { spec, type TestEvent } from 'node:test/reporters';
@@ -105,6 +107,8 @@ class Counts {
 
 /** A test, a suite's hook, or a file that failed */
 interface Failure {
+    /** Whether a test failed, rather than a suite or the file itself */
+    readonly isTest: boolean;
     /** The names of its suites and its own. None, if it's the file itself. */
     readonly titles: readonly string[];
     readonly duration: number;
@@ -213,7 +217,8 @@ class FileResults {
         if (result.type === 'test:fail') {
             this.#addFailure(
                 result,
-                isFile ? [] : [...this.#running.slice(0, nesting), name]
+                isFile ? [] : [...this.#running.slice(0, nesting), name],
+                details.type !== 'suite' && !isFile
             );
         }
     }
@@ -228,7 +233,7 @@ class FileResults {
         return nesting === 0 && resolve(this.#cwd, name) === this.#file;
     }
 
-    #addFailure({ data }: TestFail, titles: string[]): void {
+    #addFailure({ data }: TestFail, titles: string[], isTest: boolean): void {
         const { error, duration_ms: duration } = data.details;
 
         // A suite fails with its tests, whose own failures say why, and a
@@ -241,7 +246,12 @@ class FileResults {
             return;
         }
 
-        this.#failures.push({ titles, duration, error: formatError(error) });
+        this.#failures.push({
+            titles,
+            isTest,
+            duration,
+            error: formatError(error)
+        });
     }
 
     /** The file's row, and a line for each of its failures */
@@ -267,13 +277,18 @@ class FileResults {
         );
     }
 
-    /** The errors of the file's failures, each under its file and titles */
-    formatErrors(): string[] {
-        return this.#failures.map(({ titles, error }) => {
-            const title = [this.#label, ...titles].join(' > ');
+    /**
+     * The errors of the file's failed tests, or of its failed suites and of
+     * the file itself, each under its file and titles
+     */
+    formatErrors(ofTests: boolean): string[] {
+        return this.#failures
+            .filter(({ isTest }) => isTest === ofTests)
+            .map(({ titles, error }) => {
+                const title = [this.#label, ...titles].join(' > ');
 
-            return `${FAIL} ${title}\n${error}\n`;
-        });
+                return `${FAIL} ${title}\n${error}\n`;
+            });
     }
 }
 
@@ -296,6 +311,20 @@ function testFile(data: {
     return data.entryFile ?? data.file;
 }
 
+/**
+ * The errors under a heading with their number, as `Failed Tests 2`, or
+ * nothing without errors
+ */
+function formatErrors(heading: string, errors: readonly string[]): string {
+    if (errors.length === 0) {
+        return '';
+    }
+
+    const title = styleText(['bold', 'red'], ` ${heading} ${errors.length}`);
+
+    return `\n${title}\n\n${errors.join('\n')}`;
+}
+
 /** A line of the totals, whose labels end in the same column */
 function formatTotal(label: string, value: string): string {
     return `${styleText('gray', label.padStart(11))}  ${value}\n`;
@@ -307,7 +336,9 @@ class Report {
     readonly #projects = new Projects();
     #files = new Counts();
     #tests = new Counts();
-    #errors: string[] = [];
+    /** Of the suites and the files that failed, which aren't failed tests */
+    #suiteErrors: string[] = [];
+    #testErrors: string[] = [];
     /** The file whose tests are being reported */
     #current: FileResults | undefined;
 
@@ -390,7 +421,8 @@ class Report {
         } else {
             this.#files.passed++;
         }
-        this.#errors.push(...results.formatErrors());
+        this.#suiteErrors.push(...results.formatErrors(false));
+        this.#testErrors.push(...results.formatErrors(true));
 
         return results.formatRow();
     }
@@ -413,15 +445,15 @@ class Report {
 
         const row = this.#endFile();
         const errors =
-            this.#errors.length === 0
-                ? ''
-                : `\n${styleText(['bold', 'red'], ` Failed Tests ${this.#errors.length}`)}\n\n${this.#errors.join('\n')}`;
+            formatErrors('Failed Suites', this.#suiteErrors) +
+            formatErrors('Failed Tests', this.#testErrors);
         const totals =
             formatTotal('Test Files', this.#files.format()) +
             formatTotal('Tests', this.#tests.format()) +
             formatTotal('Duration', formatDuration(duration));
 
-        this.#errors = [];
+        this.#suiteErrors = [];
+        this.#testErrors = [];
         this.#files = new Counts();
         this.#tests = new Counts();
 

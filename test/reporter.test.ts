@@ -3,7 +3,7 @@ import { join, parse, relative, sep } from 'node:path';
 import process from 'node:process';
 import { Readable } from 'node:stream';
 import type { TestEvent } from 'node:test/reporters';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
 import { describe, expect } from 'hypotes';
 import { fc, it } from 'hypotes/fast-check';
@@ -16,6 +16,7 @@ const PASSES = join(PROJECTS, 'alpha', 'test', 'passes.ts');
 const BROKEN = join(PROJECTS, 'beta', 'broken.ts');
 const HOOK = join(PROJECTS, 'beta', 'hook.ts');
 const THROUGH = join(PROJECTS, 'beta', 'through.ts');
+const ENTRY_FILE = fileURLToPath(new URL('fixtures/entry-file.ts', import.meta.url));
 
 /** The start of the escape sequences that colour text in a terminal */
 const ESCAPE = '\u001B[';
@@ -27,6 +28,8 @@ interface RunOptions {
     readonly isolation?: 'none' | 'process';
     /** node:test's `--test-name-pattern`, which runs the tests that it matches */
     readonly namePattern?: string;
+    /** The reporter's path or URL, which is `hypotes/reporter` unless given */
+    readonly reporter?: string;
 }
 
 /**
@@ -35,7 +38,12 @@ interface RunOptions {
  */
 async function report(
     files: readonly string[],
-    { colors = false, isolation = 'process', namePattern }: RunOptions = {}
+    {
+        colors = false,
+        isolation = 'process',
+        namePattern,
+        reporter: reporterPath = import.meta.resolve('hypotes/reporter')
+    }: RunOptions = {}
 ): Promise<string> {
     const env = { ...process.env };
     // Which tells node:test that it runs in a test file's process
@@ -50,7 +58,7 @@ async function report(
     const args = [
         '--test',
         `--test-isolation=${isolation}`,
-        `--test-reporter=${import.meta.resolve('hypotes/reporter')}`,
+        `--test-reporter=${reporterPath}`,
         ...(namePattern === undefined ? [] : [`--test-name-pattern=${namePattern}`]),
         ...files
     ];
@@ -74,12 +82,20 @@ function totals(text: string): string[] {
     return text.split('\n').filter(line => /^ +(?:Test Files|Tests|Duration) {2}/u.test(line));
 }
 
-const [plain, shared, colored, filtered] = await Promise.all([
+const [plain, shared, colored, filtered, entryFile] = await Promise.all([
     report([MIXED, DEEP, PASSES, BROKEN, HOOK, THROUGH]),
     report([MIXED, PASSES], { isolation: 'none' }),
     report([MIXED, PASSES], { colors: true }),
-    report([DEEP, PASSES], { namePattern: 'adds' })
+    report([DEEP, PASSES], { namePattern: 'adds' }),
+    report([PASSES], { reporter: pathToFileURL(ENTRY_FILE).href })
 ]);
+
+/**
+ * Whether this Node says which test file a test is from, as `entryFile`.
+ * Node 24.13.1 doesn't, so there a test goes under the module that declares
+ * it.
+ */
+const NAMES_TEST_FILE = entryFile === 'true';
 
 describe('a run of files', () => {
     it('should print a row for each file, with its project and its counts', () => {
@@ -91,13 +107,18 @@ describe('a run of files', () => {
             ' ❯ |beta| broken.ts (0 tests) 0ms',
             ' ❯ |beta| hook.ts (1 test) 0ms',
             '   × suite 0ms',
-            ' ✓ |beta| through.ts (1 test) 0ms'
+            NAMES_TEST_FILE
+                ? ' ✓ |beta| through.ts (1 test) 0ms'
+                : ' ✓ |@fixture/lib| declare.ts (1 test) 0ms'
         ]);
     });
 
-    it('should report a test under its test file, not the module that declares it', () => {
-        expect(plain).not.toContain('@fixture/lib');
-    });
+    it.skipIf(!NAMES_TEST_FILE)(
+        'should report a test under its test file, not the module that declares it',
+        () => {
+            expect(plain).not.toContain('@fixture/lib');
+        }
+    );
 
     it('should print the totals of files and tests', () => {
         expect(totals(plain)).toStrictEqual([
@@ -108,7 +129,9 @@ describe('a run of files', () => {
     });
 
     it('should print the error of each failure under its file and titles', () => {
-        expect(plain).toContain(' Failed Tests 3\n');
+        expect(plain).toContain(' Failed Suites 2\n');
+        expect(plain).toContain(' Failed Tests 1\n');
+        expect(plain.indexOf(' Failed Suites ')).toBeLessThan(plain.indexOf(' Failed Tests '));
         expect(plain).toContain(
             ' FAIL |@fixture/alpha| test/mixed.ts > outer > inner > fails\n' +
                 'AssertionError [ERR_ASSERTION]: one is not two\n'
