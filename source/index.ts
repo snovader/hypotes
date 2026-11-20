@@ -1,5 +1,6 @@
 // Vitest's API for tests, on Node's test runner: tests and suites, hooks,
-// Vitest's matchers, its spies, and its module mocks
+// Vitest's matchers, its spies, its module mocks, its fake timers, its stubs
+// of globals, and its waits
 import {
     clearAllMocks,
     fn,
@@ -12,6 +13,7 @@ import {
     type MaybePartiallyMocked,
     type MaybePartiallyMockedDeep
 } from '@vitest/spy';
+import { chained } from './chain.ts';
 import {
     doMock,
     doUnmock,
@@ -20,6 +22,9 @@ import {
     mock,
     unmock
 } from './mocks.ts';
+import { createStubsAPI, type StubsAPI } from './stubs.ts';
+import { createTimersAPI, type TimersAPI } from './timers.ts';
+import { createWaitAPI, type WaitAPI } from './wait.ts';
 
 export { expect, type Expect } from './expect.ts';
 export {
@@ -48,6 +53,7 @@ export {
     type TestOptions
 } from './tests.ts';
 export type { MockFactoryWithHelper } from './mocks.ts';
+export type { FakeTimersConfig } from './timers.ts';
 export type { Mock, MockInstance } from '@vitest/spy';
 
 /**
@@ -78,13 +84,8 @@ function mocked(item: unknown): unknown {
     return item;
 }
 
-/**
- * Vitest's spies, which its matchers, such as `toHaveBeenCalledWith`, check,
- * and its module mocks, which node preloads with `--import hypotes/register`.
- * node:test's `mock` mocks timers.
- */
-export const vi = {
-    clearAllMocks,
+/** The members of `vi` that mock functions, objects' methods, and modules */
+const mocks = {
     doMock,
     doUnmock,
     fn,
@@ -93,8 +94,36 @@ export const vi = {
     isMockFunction,
     mock,
     mocked,
-    resetAllMocks,
-    restoreAllMocks,
     spyOn,
     unmock
+};
+
+/** `vi`, which the members that Vitest's return `vi` from return */
+export interface Vi
+    extends Readonly<typeof mocks>, StubsAPI<Vi>, TimersAPI<Vi>, WaitAPI {
+    /** Clears the calls and results of every mock */
+    clearAllMocks(): Vi;
+    /** Clears every mock, and resets its implementation to its original */
+    resetAllMocks(): Vi;
+    /** Restores what every `vi.spyOn()` replaced */
+    restoreAllMocks(): Vi;
+}
+
+const self = (): Vi => vi;
+const timers = createTimersAPI(self);
+
+/**
+ * Vitest's spies, which its matchers, such as `toHaveBeenCalledWith`, check,
+ * its module mocks, which node preloads with `--import hypotes/register`,
+ * its fake timers, its stubs of globals and environment variables, and its
+ * waits.
+ */
+export const vi: Vi = {
+    ...mocks,
+    clearAllMocks: chained(self, clearAllMocks),
+    resetAllMocks: chained(self, resetAllMocks),
+    restoreAllMocks: chained(self, restoreAllMocks),
+    ...createStubsAPI(self),
+    ...timers,
+    ...createWaitAPI(timers)
 };

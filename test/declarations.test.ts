@@ -186,6 +186,7 @@ describe('declarations', () => {
 
     it.each([
         ['a timeout after the function applies', 'timed out after 10ms'],
+        ['a timeout applies while the timers are fake', 'timed out after 10ms'],
         ['options after the function throw, as in Vitest 4', OPTIONS_AFTER_FUNCTION],
         ['options after the function of each row throw', OPTIONS_AFTER_FUNCTION],
         ['two functions throw, as in Vitest', 'TypeError: Cannot use two functions as arguments'],

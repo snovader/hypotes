@@ -88,6 +88,7 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "@sinonjs/fake-timers": "15.4.0",
     "@vitest/expect": "^5.1.0",
     "@vitest/spy": "^5.1.0",
     "@vitest/utils": "^5.1.0",

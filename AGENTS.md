@@ -9,8 +9,9 @@ intent, not a requirement to preserve every detail.
 - Give each function, class, and module a clear scope of responsibility.
   For example, `tests.ts` declares tests and suites, `hooks.ts` maps hooks onto
   node:test's, `expect.ts` assembles the matchers, `site.ts` records where
-  each test was declared, `mocks.ts` mocks modules, and `hoist.ts` hoists the
-  mocks of a test file.
+  each test was declared, `mocks.ts` mocks modules, `hoist.ts` hoists the
+  mocks of a test file, `timers.ts` fakes timers, `stubs.ts` stubs
+  globals, and `wait.ts` waits for a function to succeed.
 - Search for existing implementations and related abstractions before adding
   code. Always consider reusability and where behavior belongs. Keep a helper
   local when its responsibility is local; share it when it has a coherent role
@@ -77,8 +78,19 @@ intent, not a requirement to preserve every detail.
   Vitest 5.1's runner formats them, for example.
 - Build on node:test, rather than reimplementing what it does. Tests, suites,
   and hooks are declared through node:test's, and its reporters, timeouts,
-  `skip`, `todo`, and `only` apply to them. `vi` has Vitest's spies, and
-  node:test's `mock` mocks timers.
+  `skip`, `todo`, and `only` apply to them. `vi` has Vitest's spies.
+- Fake timers are an exception: node:test's `mock.timers` can't advance
+  timers as promises settle, or count them, which Vitest's
+  `advanceTimersByTimeAsync` and `getTimerCount` do. So `timers.ts` has
+  Vitest's, on `@sinonjs/fake-timers`, as Vitest's own are. Vitest bundles a
+  patched copy of the package, so no `@vitest/*` package has it:
+  `package.json` pins the version that Vitest bundles, and a pull request
+  that moves Vitest's packages moves it too, after comparing Vitest's patch
+  of it with what the header of `timers.ts` says that it makes up for.
+  `stubs.ts` has Vitest's stubs of globals and environment variables, and
+  `wait.ts` its `vi.waitFor` and `vi.waitUntil`, on the real timers that
+  `@vitest/utils` keeps. The members of `vi` that Vitest's return `vi` from
+  do so here, through `chain.ts`.
 - Module mocks are the exception: node:test's `mock.module` needs a flag that
   NODE_OPTIONS can't pass, and can't keep a module's original exports. So
   `vi.mock` and the members of `vi` that go with it mock modules through
@@ -184,6 +196,9 @@ intent, not a requirement to preserve every detail.
 - `expect.extend()` and `expect.addEqualityTesters()` change every test in
   the process. A test that calls them leaves the matchers and testers as they
   were, as `test/equals.test.ts` does.
+- Fake timers, a faked date, and stubs last until they're undone, so a test
+  file that sets them undoes them in an `afterEach`, as
+  `test/timers.test.ts` and `test/stubs.test.ts` do.
 - Use meaningful test names and keep grouping shallow. Add `describe` blocks
   when they organize related behavior, rather than repeating the file's identity.
 - Run the relevant code and checks, and state anything that could not be run.
@@ -225,9 +240,13 @@ intent, not a requirement to preserve every detail.
 - rolldown resolves the private paths as it bundles, so the bundle has none,
   but tsc keeps them in the declarations. The `imports` of `publishConfig`
   name the declarations in `dist/` for those, and nothing to run.
-- The runtime dependencies are Vitest's packages, and tinyrainbow, which
-  they colour messages with, in the range that they require: `expect.ts`
-  turns off the colours of the copy that they load. fast-check, oxlint,
+- The runtime dependencies are Vitest's packages, tinyrainbow, which
+  they colour messages with, in the range that they require, and
+  `@sinonjs/fake-timers`, at the version that Vitest bundles: `expect.ts`
+  turns off the colours of the copy of tinyrainbow that they load, and
+  `timers.ts` loads `@sinonjs/fake-timers` once a test fakes the timers or
+  the date, so that a test file that doesn't fake them doesn't load it.
+  fast-check, oxlint,
   oxc-parser, and magic-string are optional peer dependencies, for the entry
   points that need them: `hypotes/fast-check` imports fast-check,
   `source/oxlint` imports only oxlint's types, and `hypotes/register` loads

@@ -74,6 +74,23 @@ describe('expect', () => {
         expect(vi.isMockFunction(spy)).toBe(true);
     });
 
+    it('should clear, reset and restore every spy, and return vi', () => {
+        const target = { method: (): string => 'original' };
+        const spy = vi.spyOn(target, 'method').mockReturnValue('mocked');
+        target.method();
+
+        const cleared = vi.clearAllMocks();
+        const calls = spy.mock.calls.length;
+        const restored = vi.resetAllMocks().restoreAllMocks();
+
+        expect([cleared, restored]).toEqual([vi, vi]);
+        expect([calls, target.method(), vi.isMockFunction(target.method)]).toEqual([
+            0,
+            'original',
+            false
+        ]);
+    });
+
     it('should add a diff to the message of a matcher that compares values', () => {
         const message = messageOf(() => {
             expect({ a: [1, -0], b: 'same' }).toStrictEqual({ a: [1, 0], b: 'same' });
