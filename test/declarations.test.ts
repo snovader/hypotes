@@ -25,6 +25,11 @@ interface RunOptions {
     readonly only?: boolean;
     /** Preloads hypotes/register, for module mocks */
     readonly register?: boolean;
+    /**
+     * Preloads a load hook before hypotes/register, so that it runs after it,
+     * through its `nextLoad`
+     */
+    readonly hook?: string;
     /** Runs with --enable-source-maps, with which node:test maps the sites of tests */
     readonly sourceMaps?: boolean;
 }
@@ -36,6 +41,9 @@ const MOCKS = fileURLToPath(new URL('fixtures/mocks.ts', import.meta.url));
 const NESTED = fileURLToPath(new URL('fixtures/nested.ts', import.meta.url));
 const CRLF = fileURLToPath(new URL('fixtures/crlf.ts', import.meta.url));
 const COLORS = fileURLToPath(new URL('fixtures/colors.ts', import.meta.url));
+const PREPENDED = fileURLToPath(new URL('fixtures/prepended.ts', import.meta.url));
+/** The hook that prepends lines to `PREPENDED`, and maps them out */
+const PREPEND_LINES = new URL('fixtures/prepend-lines.ts', import.meta.url).href;
 
 /** The start of the escape sequences that colour text in a terminal */
 const ESCAPE = '\u001B[';
@@ -46,7 +54,7 @@ const ESCAPE = '\u001B[';
  */
 async function resultsOf(
     file: string,
-    { colors, only = false, register = false, sourceMaps = false }: RunOptions = {}
+    { colors, hook, only = false, register = false, sourceMaps = false }: RunOptions = {}
 ): Promise<Map<string, Result>> {
     const env = { ...process.env };
     // Which tells node:test that it runs in a test file's process
@@ -62,7 +70,10 @@ async function resultsOf(
         env.FORCE_COLOR = '1';
     }
 
-    const preload = register ? ['--import', import.meta.resolve('hypotes/register')] : [];
+    const preload = [
+        ...(hook === undefined ? [] : ['--import', hook]),
+        ...(register ? ['--import', import.meta.resolve('hypotes/register')] : [])
+    ];
     const flags = sourceMaps ? ['--enable-source-maps'] : [];
     const args = [...flags, ...preload, RESULTS, file, ...(only ? ['only'] : [])];
     const { stdout } = await promisify(execFile)(process.execPath, args, { env });
@@ -86,7 +97,10 @@ const [
     unregisteredResults,
     crlfResults,
     plainResults,
-    coloredResults
+    coloredResults,
+    prependedResults,
+    mappedPrependedResults,
+    invalidMapResults
 ] = await Promise.all([
     resultsOf(DECLARATIONS),
     resultsOf(ONLY, { only: true }),
@@ -96,7 +110,10 @@ const [
     resultsOf(MOCKS),
     resultsOf(CRLF, { register: true }),
     resultsOf(COLORS, { colors: false }),
-    resultsOf(COLORS, { colors: true })
+    resultsOf(COLORS, { colors: true }),
+    resultsOf(PREPENDED, { hook: PREPEND_LINES, register: true }),
+    resultsOf(PREPENDED, { hook: PREPEND_LINES, register: true, sourceMaps: true }),
+    resultsOf(PREPENDED, { hook: `${PREPEND_LINES}?map=invalid`, register: true })
 ]);
 
 /** The start of the error that Vitest 4 throws for options after the function */
@@ -232,6 +249,45 @@ describe('declarations in a module that mocks modules', () => {
         expect(nestedResults.get(NESTED)?.error).toContain(
             `vi.mock('./later.ts') at ${NESTED}:${line}:5`
         );
+    });
+
+    it.each([
+        ['', prependedResults],
+        [' with --enable-source-maps', mappedPrependedResults]
+    ])(
+        'should place its tests where they are after a hook that maps its code%s',
+        (_, prepended) => {
+            expect(
+                prepended.get('mocks are hoisted after a hook that maps its code')
+            ).toMatchObject({
+                passed: true,
+                file: PREPENDED,
+                line: lineOf("it('mocks are hoisted after a hook that maps its code'", PREPENDED)
+            });
+        }
+    );
+
+    it('should report a failure where the module fails after a hook that maps its code', () => {
+        const result = prependedResults.get(
+            'a failure in a module that a hook maps points at its line'
+        );
+        const line = lineOf("expect(value()).toBe('original')", PREPENDED);
+
+        expect(result?.passed).toBe(false);
+        expect(result?.error).toContain(`${PREPENDED}:${line}:`);
+    });
+
+    it("should place its tests in the code as it's given after a hook whose map isn't JSON", () => {
+        const line = lineOf("it('mocks are hoisted after a hook that maps its code'", PREPENDED);
+
+        expect(
+            invalidMapResults.get('mocks are hoisted after a hook that maps its code')
+        ).toMatchObject({
+            passed: true,
+            file: PREPENDED,
+            // Below the hook's two lines
+            line: line + 2
+        });
     });
 
     it('should fail the module without hypotes/register', () => {

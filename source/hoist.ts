@@ -17,13 +17,24 @@
 // `export * from` as the module loads, this one rejects it: a module's
 // exports are named before it runs, so that one would load before the mocks.
 //
+// A hook that runs after this one, through its `nextLoad`, such as one that
+// strips TypeScript, can end the module with an inline source map of its
+// own. Node reads only a module's last source map, so this one chains it: it
+// maps the hoisted code to where that map does, and leaves out the comment
+// that carried it. A map that doesn't parse is dropped, as Node would ignore
+// it, and this one maps to the code as it's given.
+//
 // oxc-parser parses the module, and magic-string writes it and its source
 // map: optional peer dependencies, which load once a module needs them.
+import { Buffer } from 'node:buffer';
 import {
     createRequire,
     getSourceMapsSupport,
     setSourceMapsSupport,
-    type LoadFnOutput
+    SourceMap as NodeSourceMap,
+    type LoadFnOutput,
+    type SourceMapPayload,
+    type SourceMapping
 } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import type * as MagicStringModule from 'magic-string';
@@ -31,6 +42,8 @@ import type * as Oxc from 'oxc-parser';
 import { MOCKS_KEY } from './mocks.ts';
 
 type MagicString = MagicStringModule.MagicString;
+type DecodedSourceMap = MagicStringModule.DecodedSourceMap;
+type SourceMapSegment = MagicStringModule.SourceMapSegment;
 
 interface Span {
     readonly start: number;
@@ -57,8 +70,33 @@ type ExportFrom = Oxc.ExportNamedDeclaration & {
 /** A statement that loads another module, for its exports or to run it */
 type Load = ExportFrom | Oxc.ExportAllDeclaration | Oxc.ImportDeclaration;
 
+/** A module's code, and the inline source map that it ended with, if any */
+interface MappedCode {
+    readonly code: string;
+    readonly map: NodeSourceMap | undefined;
+}
+
+/** The sources and names of a chained map, by their index in it */
+class Indices {
+    readonly #indices = new Map<string, number>();
+    readonly values: string[] = [];
+
+    /** The index of the value, which it adds if it's new */
+    indexOf(value: string): number {
+        let index = this.#indices.get(value);
+        if (index === undefined) {
+            index = this.values.length;
+            this.#indices.set(value, index);
+            this.values.push(value);
+        }
+
+        return index;
+    }
+}
+
 interface Dependencies {
     readonly MagicString: typeof MagicStringModule.MagicString;
+    readonly SourceMap: typeof MagicStringModule.SourceMap;
     readonly parseSync: typeof Oxc.parseSync;
     readonly Visitor: typeof Oxc.Visitor;
 }
@@ -69,6 +107,13 @@ interface Dependencies {
  */
 const MOCK_CALL =
     /\bvi\s*\.\s*(?:mock|unmock|hoisted|doMock|doUnmock|importActual)\s*[(<]/u;
+
+/**
+ * An inline source map at the end of the code, with only whitespace after
+ * it, and its base64
+ */
+const INLINE_MAP =
+    /\/\/# sourceMappingURL=data:application\/json(?:;charset=utf-8)?;base64,([\d+/=A-Za-z]+)\s*$/u;
 
 /** The methods of `vi` whose calls move above the module's code */
 const HOISTED = new Set(['hoisted', 'mock', 'unmock']);
@@ -108,12 +153,12 @@ export function hoistModule(url: string, loaded: LoadFnOutput): LoadFnOutput {
         return loaded;
     }
 
-    const code = typeof source === 'string' ? source : decoder.decode(source);
-    if (!MOCK_CALL.test(code)) {
+    const text = typeof source === 'string' ? source : decoder.decode(source);
+    if (!MOCK_CALL.test(text)) {
         return loaded;
     }
 
-    const hoisted = hoistMocks(code, url);
+    const hoisted = hoistMocks(splitInlineMap(text), url);
     if (hoisted === undefined) {
         return loaded;
     }
@@ -132,9 +177,9 @@ function loadDependencies(): Dependencies {
     if (dependencies === undefined) {
         try {
             const { parseSync, Visitor } = require('oxc-parser') as typeof Oxc;
-            const { MagicString } =
+            const { MagicString, SourceMap } =
                 require('magic-string') as typeof MagicStringModule;
-            dependencies = { MagicString, parseSync, Visitor };
+            dependencies = { MagicString, parseSync, SourceMap, Visitor };
         } catch (error) {
             if ((error as { code?: unknown }).code !== 'MODULE_NOT_FOUND') {
                 throw error;
@@ -150,11 +195,35 @@ function loadDependencies(): Dependencies {
 }
 
 /**
- * The module's code, with its mocks hoisted, and its source map, unless it
- * doesn't parse, which Node reports as it compiles it, or doesn't call `vi`
+ * The code without the inline source map at its end, and that map, unless
+ * it doesn't parse
  */
-function hoistMocks(code: string, url: string): string | undefined {
-    const { MagicString, parseSync, Visitor } = loadDependencies();
+function splitInlineMap(text: string): MappedCode {
+    const match = INLINE_MAP.exec(text);
+    if (match === null) {
+        return { code: text, map: undefined };
+    }
+
+    const code = text.slice(0, match.index);
+    try {
+        const json = Buffer.from(match[1], 'base64').toString('utf8');
+        const payload = JSON.parse(json) as SourceMapPayload;
+        return { code, map: new NodeSourceMap(payload) };
+    } catch {
+        return { code, map: undefined };
+    }
+}
+
+/**
+ * The module's code, with its mocks hoisted, and its source map, chained to
+ * the map that the code came with, unless it doesn't parse, which Node
+ * reports as it compiles it, or doesn't call `vi`
+ */
+function hoistMocks(
+    { code, map: incoming }: MappedCode,
+    url: string
+): string | undefined {
+    const { MagicString, SourceMap, parseSync, Visitor } = loadDependencies();
     const path = fileURLToPath(url);
     const { errors, module, program } = parseSync(path, code, {
         sourceType: 'module'
@@ -178,8 +247,105 @@ function hoistMocks(code: string, url: string): string | undefined {
         hoist(s, program, hoisted, code, path);
     }
 
-    const map = s.generateMap({ source: url, hires: 'boundary' });
+    const decoded = s.generateDecodedMap({ source: url, hires: 'boundary' });
+    const map =
+        incoming === undefined
+            ? new SourceMap(decoded)
+            : chainMap(decoded, incoming, SourceMap);
     return `${s.toString()}\n//# sourceMappingURL=${map.toUrl()}\n`;
+}
+
+/**
+ * The map of the hoisted code, through the map that the code came with, to
+ * where that one maps it. A segment that it doesn't map is left out.
+ */
+function chainMap(
+    map: DecodedSourceMap,
+    incoming: NodeSourceMap,
+    SourceMap: typeof MagicStringModule.SourceMap
+): MagicStringModule.SourceMap {
+    const sources = new Indices();
+    const names = new Indices();
+    const mappings = map.mappings.map(line =>
+        chainLine(line, map.names, incoming, sources, names)
+    );
+
+    const { payload } = incoming;
+    const sourcesContent =
+        payload.sourcesContent === undefined
+            ? undefined
+            : sources.values.map(
+                  source =>
+                      payload.sourcesContent[payload.sources.indexOf(source)] ??
+                      null
+              );
+    const chained = new SourceMap({
+        file: map.file,
+        sources: sources.values,
+        sourcesContent,
+        names: names.values,
+        mappings
+    });
+
+    // Which magic-string's map doesn't take, and Node's lookups leave out of
+    // the sources that they return
+    return payload.sourceRoot === undefined
+        ? chained
+        : Object.assign(chained, { sourceRoot: payload.sourceRoot });
+}
+
+/** The segments of a line of the map, through the incoming map */
+function chainLine(
+    line: readonly SourceMapSegment[],
+    mapNames: readonly string[],
+    incoming: NodeSourceMap,
+    sources: Indices,
+    names: Indices
+): SourceMapSegment[] {
+    const chained: SourceMapSegment[] = [];
+    for (const segment of line) {
+        if (segment.length === 1) {
+            chained.push(segment);
+            continue;
+        }
+
+        const [column, , originalLine, originalColumn, nameIndex] = segment;
+        const entry = incoming.findEntry(originalLine, originalColumn);
+        // Node's lookup returns the last entry before the position, which
+        // can be on an earlier line
+        if (
+            !('originalSource' in entry) ||
+            entry.generatedLine !== originalLine
+        ) {
+            continue;
+        }
+
+        const name = nameOf(entry, mapNames, nameIndex);
+        const position: SourceMapSegment = [
+            column,
+            sources.indexOf(entry.originalSource),
+            entry.originalLine,
+            entry.originalColumn
+        ];
+        chained.push(
+            name === undefined ? position : [...position, names.indexOf(name)]
+        );
+    }
+
+    return chained;
+}
+
+/**
+ * The name of a chained segment: the incoming map's, which Node's lookup
+ * returns, though its types leave it out, or the segment's
+ */
+function nameOf(
+    entry: SourceMapping,
+    mapNames: readonly string[],
+    nameIndex: number | undefined
+): string | undefined {
+    const { name } = entry as SourceMapping & { readonly name?: string };
+    return name ?? (nameIndex === undefined ? undefined : mapNames[nameIndex]);
 }
 
 /** The module's calls of the methods of `vi` that mock, in order */
