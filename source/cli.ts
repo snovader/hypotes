@@ -8,22 +8,36 @@
 // `hypotes/reporter`, and passes the rest of its arguments on, so node:test's
 // flags, such as `--watch` and `--test-name-pattern`, work as they do there.
 //
+// It has two of Vitest's defaults where node:test's differ, each of which
+// an argument replaces. Named no files, node:test runs every file in a
+// `test` directory, the helpers there too, so the command names Vitest's
+// pattern of test files to it. And node:test's tests have no timeout, so
+// the command passes Vitest's, as `--test-timeout`, which node:test gives
+// to hooks as well.
+//
 // `--project` is the one flag of its own, after Vitest's. node:test can't
 // select files by their package, so with `--project` this names the
 // selected projects' directories or files to node:test, as `test-files.ts`
-// says. It then has to tell patterns from flags, which it does by the
-// leading `-`: a flag's value has to follow a `=`, as in
-// `--test-name-pattern=adds`, or it's taken for a pattern.
+// says.
+//
+// It tells patterns from flags by the leading `-`: a flag's value has to
+// follow a `=`, as in `--test-name-pattern=adds`, or it's taken for a
+// pattern.
 import { spawn, type ChildProcess } from 'node:child_process';
 import process from 'node:process';
 import { ProjectFilter } from './project-filter.ts';
-import { defaultPattern, TestFiles } from './test-files.ts';
+import { DEFAULT_PATTERN, TestFiles } from './test-files.ts';
 
 const USAGE = `Usage: hypotes [--project <name>]... [node's flags] [files or patterns]
 
 Runs tests with node --test, with the preload hypotes/register and the
 reporter hypotes/reporter. Other flags are node's, such as --watch,
---test-name-pattern=<pattern> and --test-reporter=<reporter>.
+--test-name-pattern=<pattern> and --test-reporter=<reporter>. A flag's value
+follows a =, or it's taken for a pattern of files.
+
+Without files or patterns, it runs the files that match
+${DEFAULT_PATTERN}
+and without --test-timeout, a test or a hook fails after 5 seconds.
 
   --project <name>  Runs only the test files of the package with the name in
                     its package.json. Can be repeated. A * matches any
@@ -33,6 +47,9 @@ reporter hypotes/reporter. Other flags are node's, such as --watch,
 
 /** Node's exit code for an invalid argument */
 const INVALID_ARGUMENT = 9;
+
+/** Vitest's default `testTimeout`, in milliseconds */
+const DEFAULT_TIMEOUT = 5000;
 
 /** The signals that end a process, which the launcher passes on to Node */
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
@@ -88,6 +105,23 @@ function parseArguments(args: readonly string[]): Arguments {
     return { projects, rest, help };
 }
 
+/** Whether an argument names files, rather than being one of node's flags */
+function isPattern(argument: string): boolean {
+    return !argument.startsWith('-');
+}
+
+/** Whether the arguments have the flag, with a value or without */
+function hasFlag(args: readonly string[], flag: string): boolean {
+    return args.some(
+        argument => argument === flag || argument.startsWith(`${flag}=`)
+    );
+}
+
+/** The arguments, with the default pattern if they name no files */
+function withDefaultPattern(rest: readonly string[]): readonly string[] {
+    return rest.some(isPattern) ? rest : [...rest, DEFAULT_PATTERN];
+}
+
 /**
  * Node's flags among the arguments, and what names the test files of the
  * selected projects in place of the patterns
@@ -97,16 +131,13 @@ function selectFiles(
     rest: readonly string[],
     cwd: string
 ): string[] {
-    const flags = rest.filter(argument => argument.startsWith('-'));
-    const patterns = rest.filter(argument => !argument.startsWith('-'));
+    const flags = rest.filter(argument => !isPattern(argument));
+    const patterns = rest.filter(isPattern);
 
-    const stripsTypes = !flags.some(flag =>
-        /^--no-(?:experimental-)?strip-types$/u.test(flag)
-    );
     const testFiles = new TestFiles(cwd, new ProjectFilter(projects));
     const named =
         patterns.length === 0
-            ? testFiles.ofProjects(defaultPattern(stripsTypes))
+            ? testFiles.ofProjects(DEFAULT_PATTERN)
             : testFiles.matching(patterns);
 
     if (named.length === 0) {
@@ -126,18 +157,20 @@ function selectFiles(
 /** The arguments that Node runs the tests with */
 function nodeArguments({ projects, rest }: Arguments, cwd: string): string[] {
     const passed =
-        projects.length === 0 ? rest : selectFiles(projects, rest, cwd);
-    const hasReporter = rest.some(argument =>
-        /^--test-reporter(?:=|$)/u.test(argument)
-    );
+        projects.length === 0
+            ? withDefaultPattern(rest)
+            : selectFiles(projects, rest, cwd);
 
     return [
         '--import',
         import.meta.resolve('hypotes/register'),
         '--test',
-        ...(hasReporter
+        ...(hasFlag(rest, '--test-reporter')
             ? []
             : [`--test-reporter=${import.meta.resolve('hypotes/reporter')}`]),
+        ...(hasFlag(rest, '--test-timeout')
+            ? []
+            : [`--test-timeout=${DEFAULT_TIMEOUT}`]),
         ...passed
     ];
 }

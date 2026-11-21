@@ -8,13 +8,13 @@ const ALPHA = fileURLToPath(new URL('fixtures/projects/alpha', import.meta.url))
 
 describe('Projects', () => {
     it('should name a file by the nearest package.json above it', () => {
-        const project = new Projects().of(join(ALPHA, 'test', 'passes.ts'));
+        const project = new Projects().of(join(ALPHA, 'test', 'passes.spec.ts'));
 
         expect(project).toStrictEqual({ name: '@fixture/alpha', directory: ALPHA });
     });
 
     it('should pass over a package.json without a name', () => {
-        const project = new Projects().of(join(ALPHA, 'test', 'nested', 'deep.ts'));
+        const project = new Projects().of(join(ALPHA, 'test', 'nested', 'deep.spec.ts'));
 
         expect(project).toStrictEqual({ name: '@fixture/alpha', directory: ALPHA });
     });
@@ -22,8 +22,8 @@ describe('Projects', () => {
     it('should give the same project to each file of a directory', () => {
         const projects = new Projects();
 
-        expect(projects.of(join(ALPHA, 'test', 'mixed.ts'))).toBe(
-            projects.of(join(ALPHA, 'test', 'passes.ts'))
+        expect(projects.of(join(ALPHA, 'test', 'mixed.spec.ts'))).toBe(
+            projects.of(join(ALPHA, 'test', 'passes.spec.ts'))
         );
     });
 

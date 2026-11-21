@@ -92,7 +92,8 @@ which aren't the ones that Vitest runs:
   `*.spec.ts` there.
 - It doesn't run `*.spec.ts` outside a `test` directory, which Vitest does.
 
-To run other files, name them, as in `node --test "**/*.spec.ts"`.
+To run other files, name them, as in `node --test "**/*.spec.ts"`. Or run
+[the `hypotes` command](#test-files), which runs the files that Vitest does.
 
 ## Mocking modules
 
@@ -373,9 +374,10 @@ in another form. Of `vi`, hypotes has only the members that
   process. node:test runs each file in a process of its own, so that means
   the file's tests, as in Vitest. With `--test-isolation=none`, the files
   share one process, and the hook runs for the tests of them all.
-- **Timeouts.** A test or a hook has no timeout unless it's given one. Vitest
-  fails a test after 5 seconds, and a hook after 10. Node's `--test-timeout`
-  sets one for every test.
+- **Timeouts.** Under `node --test`, a test or a hook has no timeout unless
+  it's given one. Vitest fails a test after 5 seconds, and a hook after 10.
+  Node's `--test-timeout` sets one for every test and hook, and
+  [the `hypotes` command](#timeout) passes Vitest's 5 seconds.
 
 ### Equality
 
@@ -470,22 +472,70 @@ Messages have colours only where Node prints them: to a terminal, or with
 
 ## The `hypotes` command
 
-`hypotes` runs `node --test` with hypotes' preload and reporter, and passes
-its other arguments on. These two commands do the same:
+`hypotes` runs `node --test` with hypotes' preload and reporter, and with
+Vitest's defaults for the test files and the timeout. It passes its other
+arguments on. These two commands do the same:
 
 ```bash
 npx hypotes
 ```
 
 ```bash
-node --import hypotes/register --test --test-reporter=hypotes/reporter
+node --import hypotes/register --test --test-reporter=hypotes/reporter --test-timeout=5000 "**/*.{test,spec}.?(c|m)[jt]s?(x)"
 ```
 
 node:test's flags work as they do with `node --test`, as in
-`npx hypotes --watch` or `npx hypotes "**/*.spec.ts"`. With
-`--test-reporter`, node:test uses that reporter rather than
-[hypotes' own](#reporter). The command exits as Node does: with 1 if a test
-fails.
+`npx hypotes --watch`. With `--test-reporter`, node:test uses that reporter
+rather than [hypotes' own](#reporter). The command exits as Node does: with
+1 if a test fails.
+
+A flag takes its value after `=`. Write `--test-name-pattern=adds`, not
+`--test-name-pattern adds`: the command takes an argument without a leading
+`-` for a file or a pattern of files.
+
+### Test files
+
+Named no files, the command runs those that match Vitest's default
+[`include`](https://vitest.dev/config/include), outside `node_modules`:
+
+```text
+**/*.{test,spec}.?(c|m)[jt]s?(x)
+```
+
+So it runs `sum.test.ts` and `sum.spec.js`, in any directory. It doesn't run
+the other files of a `test` directory, such as helpers, which `node --test`
+does. In `package.json`, the script is the command alone:
+
+```json
+{
+    "scripts": {
+        "test": "hypotes"
+    }
+}
+```
+
+A file or a pattern takes the place of the default, so
+`npm test -- test/sum.test.ts` runs that file alone.
+
+- **`.jsx` and `.tsx`.** The pattern has them, as Vitest's does, but Node
+  doesn't run them by itself. They need a preload of your own that does,
+  passed with `--import`.
+- **No test files.** If nothing matches, node:test runs no tests and the
+  command exits with 0. Vitest fails.
+
+### Timeout
+
+The command passes `--test-timeout=5000`, Vitest's default of 5 seconds.
+Without it, a test that never ends holds a CI job until the job's own limit.
+A `--test-timeout` of your own takes its place, as in
+`npx hypotes --test-timeout=30000`.
+
+- **Hooks have the same timeout.** node:test gives the timeout to hooks too,
+  so a hook fails after 5 seconds. In Vitest, a hook has 10. Give a slow
+  hook its own, as in `beforeAll(fn, 10_000)`.
+- **A timeout fails the test, but doesn't end what it started.** A test that
+  leaves a timer or a server running keeps its file's process alive after it
+  has failed. Under `node --test` too, the file then never ends.
 
 ### Running one project
 
@@ -517,14 +567,11 @@ nearest `package.json` above it that has a `name`.
 
 node:test can't select files by their package, so with `--project` the
 command names each selected project's directory to node:test, as a pattern.
-node:test then finds the test files in it, as it does without `--project`.
+node:test then finds the test files in it, by the same
+[pattern](#test-files) as without `--project`.
 
 - **Names match in any case.** `--project "@SHOP/web"` selects
   `@shop/web`, as it does in Vitest.
-- **Flags take their values after `=`.** Write
-  `--test-name-pattern=adds`, not `--test-name-pattern adds`: with
-  `--project`, the command takes an argument without a leading `-` for a
-  pattern of files.
 - **No project matches.** The command fails, and lists the projects that it
   found.
 

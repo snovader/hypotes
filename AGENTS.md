@@ -121,11 +121,16 @@ intent, not a requirement to preserve every detail.
   package's that declares tests, so it reports any node:test run.
 - The `hypotes` command, in `cli.ts`, is a launcher, not a runner: it
   starts `node --test` with the preload and the reporter, and passes its
-  other arguments on unread, so it doesn't parse node:test's flags or keep a
-  list of them. Its one flag is Vitest's `--project`. node:test can't select
-  files by their package, so `test-files.ts` names each selected project's
-  directory to it, with node:test's default pattern, which it copies: check
-  it against Node's when Node's documentation of it changes. It lists a
+  other arguments on, so it doesn't parse node:test's flags or keep a
+  list of them. It tells a flag from a file or a pattern only by the
+  leading `-`. Its one flag is Vitest's `--project`. It has two of Vitest's
+  defaults, where node:test's surprise those who come from Vitest: named
+  no files, it names Vitest's default `include` to node:test, which
+  otherwise runs the helpers in a `test` directory, and it passes
+  `--test-timeout=5000` unless it's given one. The pattern is Vitest's as
+  it's written, `.tsx` and `.jsx` too, which a preload of the caller's may
+  run. node:test can't select files by their package, so `test-files.ts`
+  names each selected project's directory to it, with that pattern. It lists a
   project's files only where a directory's pattern would take in another
   project's, since a list grows with the files, and a command can only be
   so long. node:test takes each argument for a glob pattern, so what's
