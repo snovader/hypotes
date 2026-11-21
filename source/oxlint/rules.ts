@@ -1491,7 +1491,7 @@ export const requireMockTypeParameters: Rule = {
         type: 'problem',
         docs: {
             description:
-                'Requires vi.fn() to be given the type of the function that it mocks, in TypeScript'
+                'Requires a vi.fn() without an implementation to be given the type of the function that it mocks, in TypeScript'
         }
     },
     create(context) {
@@ -1503,6 +1503,11 @@ export const requireMockTypeParameters: Rule = {
             CallExpression(call): void {
                 const method = viMethodOf(context, call);
                 if (method?.property.name !== 'fn' || call.typeArguments) {
+                    return;
+                }
+
+                // An implementation gives the mock its type
+                if (call.arguments.length > 0) {
                     return;
                 }
 

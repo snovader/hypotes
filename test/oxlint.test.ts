@@ -856,6 +856,9 @@ tester.run('require-mock-type-parameters', plugin.rules['require-mock-type-param
     valid: [
         imported('const read = vi.fn<() => string>();'),
         imported('const double = vi.fn<(value: number) => number>(value => value * 2);'),
+        imported('const double = vi.fn((value: number) => value * 2);'),
+        imported('const read = vi.fn(() => 1).mockReturnValue(2);'),
+        imported('const parse = vi.fn(parseInt);'),
         imported("vi.spyOn(console, 'log');"),
         { code: imported('const read = vi.fn();'), filename: 'test.js' },
         // A `vi` that isn't hypotes'
@@ -868,8 +871,8 @@ tester.run('require-mock-type-parameters', plugin.rules['require-mock-type-param
             errors: [{ message: UNTYPED_MOCK }]
         },
         {
-            name: 'a mock of an implementation, in a chain',
-            code: imported('const read = vi.fn(() => 1).mockReturnValue(2);'),
+            name: 'a mock in a chain',
+            code: imported('const read = vi.fn().mockReturnValue(2);'),
             errors: [{ message: UNTYPED_MOCK }]
         },
         {

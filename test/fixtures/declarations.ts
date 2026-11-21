@@ -230,7 +230,7 @@ it('hooks run in the order that node:test runs them', () => {
 });
 
 it('vi.fn records calls for the matchers', () => {
-    const spy = vi.fn<(value: number) => number>(value => value * 2);
+    const spy = vi.fn((value: number) => value * 2);
     spy(2);
 
     expect(spy).toHaveBeenCalledWith(2);
