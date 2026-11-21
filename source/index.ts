@@ -109,7 +109,10 @@ export interface Vi
     restoreAllMocks(): Vi;
 }
 
-const self = (): Vi => vi;
+function self(): Vi {
+    return vi;
+}
+
 const timers = createTimersAPI(self);
 
 /**

@@ -20,7 +20,7 @@ import { Projects } from './project.ts';
 const EXCLUDED = ['**/node_modules/**'];
 
 /** The characters of a path that mean something else in a glob pattern */
-const GLOB_SYNTAX = /[()*?[\]{}]/gu;
+const GLOB_SYNTAX = /[()*?[\]{}]/g;
 
 /**
  * A path as a glob pattern of itself, which node:test takes each of its
@@ -80,7 +80,7 @@ export class TestFiles {
      * that it's in, in order
      */
     projectNames(): string[] {
-        return [...new Set(this.#scopes().map(scope => scope.name))].toSorted();
+        return [...new Set(this.#scopes().map(scope => scope.name))].sort();
     }
 
     /**
@@ -93,9 +93,7 @@ export class TestFiles {
             .filter(file => {
                 const project = this.#projects.of(resolve(this.#cwd, file));
 
-                return (
-                    project !== undefined && this.#filter.matches(project.name)
-                );
+                return project != null && this.#filter.matches(project.name);
             })
             .toSorted()
             .map(file => escapeGlob(file));
@@ -141,7 +139,7 @@ export class TestFiles {
     #scopes(): Scope[] {
         const scopes: Scope[] = [];
         const around = this.#projects.of(join(this.#cwd, 'package.json'));
-        if (around !== undefined && around.directory !== this.#cwd) {
+        if (around != null && around.directory !== this.#cwd) {
             scopes.push({
                 name: around.name,
                 directory: '',

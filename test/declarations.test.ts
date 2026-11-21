@@ -59,19 +59,19 @@ async function resultsOf(
     const env = { ...process.env };
     // Which tells node:test that it runs in a test file's process
     delete env.NODE_TEST_CONTEXT;
-    if (colors !== undefined) {
+    if (colors != null) {
         // The process writes to a pipe, where Node prints colours only if
         // it's told to
         delete env.FORCE_COLOR;
         delete env.NO_COLOR;
         delete env.NODE_DISABLE_COLORS;
     }
-    if (colors === true) {
+    if (colors) {
         env.FORCE_COLOR = '1';
     }
 
     const preload = [
-        ...(hook === undefined ? [] : ['--import', hook]),
+        ...(hook ? ['--import', hook] : []),
         ...(register ? ['--import', import.meta.resolve('hypotes/register')] : [])
     ];
     const flags = sourceMaps ? ['--enable-source-maps'] : [];

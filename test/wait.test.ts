@@ -58,7 +58,7 @@ describe('vi.waitFor', () => {
             vi.waitFor(succeedsAt(Infinity, 'never'), { interval: 1, timeout: 20 })
         );
 
-        expect(String(error)).toMatch(/^Error: call \d+$/u);
+        expect(String(error)).toMatch(/^Error: call \d+$/);
     });
 
     it('should reject with a timeout of its own while a promise is still to settle', async () => {
@@ -74,7 +74,7 @@ describe('vi.waitFor', () => {
         const failed = await rejectionOf(vi.waitFor(succeedsAt(Infinity, 'never'), options));
         const timedOut = await rejectionOf(vi.waitFor(() => never, options));
 
-        expect(String(failed)).toMatch(/^Error: the server: call \d+$/u);
+        expect(String(failed)).toMatch(/^Error: the server: call \d+$/);
         expect(String(timedOut)).toBe('Error: the server: Timed out in waitFor!');
     });
 

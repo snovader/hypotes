@@ -22,7 +22,7 @@ vi.unmock('path');
 vi.mock('not-installed-package', () => ({ missing: 'mocked' }));
 
 /** A name of a package, or a path within one */
-const word = fc.stringMatching(/^[a-z][a-z0-9-]{0,8}$/u);
+const word = fc.stringMatching(/^[a-z][a-z0-9-]{0,8}$/);
 
 /** A package that isn't installed, or an import that isn't defined */
 const unresolved = fc.oneof(
@@ -32,8 +32,8 @@ const unresolved = fc.oneof(
 
 /** The specifier of a package that isn't installed, or a path within it */
 function packageSpecifier([scope, name, subpath]: [string | null, string, string | null]): string {
-    const specifier = scope === null ? `not-installed-${name}` : `@not-installed-${scope}/${name}`;
-    return subpath === null ? specifier : `${specifier}/${subpath}`;
+    const specifier = scope == null ? `not-installed-${name}` : `@not-installed-${scope}/${name}`;
+    return subpath == null ? specifier : `${specifier}/${subpath}`;
 }
 
 describe('vi.mock', () => {
@@ -91,7 +91,7 @@ describe('vi.mock', () => {
             reexports['a string'],
             reexports.all.one
         ]).toEqual(['mocked', 'mocked', 2, 2]);
-        expect(Object.keys(reexports).toSorted()).toEqual(['a string', 'all', 'name', 'renamed']);
+        expect(Object.keys(reexports).sort()).toEqual(['a string', 'all', 'name', 'renamed']);
     });
 
     it('should reject a module that exports every export of another, which would load first', async () => {
@@ -110,7 +110,7 @@ describe('vi.mock', () => {
 
         expect(error).toBeInstanceOf(SyntaxError);
         expect(String(error)).toMatch(
-            /vi\.hoisted\(\) at .*declares\.ts:6:15\n.*declares\.ts:8:25\n/u
+            /vi\.hoisted\(\) at .*declares\.ts:6:15\n.*declares\.ts:8:25\n/
         );
     });
 
@@ -238,7 +238,7 @@ describe('vi.doMock', () => {
 
             const names = Object.keys(exports);
             // V8 lists the names that are indices first
-            expect(Object.keys(namespace).toSorted()).toEqual(names.toSorted());
+            expect(Object.keys(namespace).sort()).toEqual(names.toSorted());
             for (const name of names) {
                 expect(namespace[name], name).toBe(exports[name]);
             }
@@ -285,7 +285,7 @@ describe('vi.doMock', () => {
         expect(() => doMock('./fixtures/later.ts', () => ({}))).toThrow(TypeError);
     });
 
-    property.prop([fc.stringMatching(/^[A-Za-z]:[\\/][\w\\/.-]*$/u)])(
+    property.prop([fc.stringMatching(/^[A-Za-z]:[\\/][\w\\/.-]*$/)])(
         'should throw for a Windows path, which parses as a URL whose scheme is its drive',
         path => {
             const { doMock } = vi;

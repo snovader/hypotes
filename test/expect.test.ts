@@ -38,12 +38,8 @@ describe('expect', () => {
     });
 
     it('should add asymmetric matchers with extend', () => {
-        // Asymmetric matchers are typed as any, which values take as unknown
-        const even: unknown = expect.toBeEven();
-        const odd: unknown = expect.not.toBeEven();
-
-        expect({ count: 4 }).toEqual({ count: even });
-        expect({ count: 3 }).toEqual({ count: odd });
+        expect({ count: 4 }).toEqual({ count: expect.toBeEven() });
+        expect({ count: 3 }).toEqual({ count: expect.not.toBeEven() });
     });
 
     it("should have the matchers that Vitest's expect adds", () => {
@@ -52,13 +48,12 @@ describe('expect', () => {
     });
 
     it('should have the asymmetric matchers', () => {
-        const number: unknown = expect.any(Number);
-        const matching: unknown = expect.stringMatching(/b/u);
-        const containing: unknown = expect.arrayContaining([2]);
-        const anything: unknown = expect.anything();
-
-        expect({ a: 1, b: 'b', c: [1, 2] }).toEqual({ a: number, b: matching, c: containing });
-        expect({ a: 1, b: 2 }).toEqual(expect.objectContaining({ a: anything }));
+        expect({ a: 1, b: 'b', c: [1, 2] }).toEqual({
+            a: expect.any(Number),
+            b: expect.stringMatching(/b/),
+            c: expect.arrayContaining([2])
+        });
+        expect({ a: 1, b: 2 }).toEqual(expect.objectContaining({ a: expect.anything() }));
     });
 
     it("should fail with expect.fail, which Vitest's expect has from chai's", () => {

@@ -68,7 +68,7 @@ function formatIndex(template: string, index: number): string {
 function signZeroes(template: string, items: readonly unknown[]): string {
     let signed = template;
 
-    for (const [index] of (template.match(/%f/gu) ?? []).entries()) {
+    for (const [index] of (template.match(/%f/g) ?? []).entries()) {
         const value = items[index] as number;
         if (isNegativeNaN(value) || Object.is(value, -0)) {
             let occurrence = 0;
@@ -86,7 +86,7 @@ function formatAttributes(text: string, items: readonly unknown[]): string {
     const isObjectItem = isObject(items[0]);
 
     return text.replaceAll(ATTRIBUTE, (_, key: string) => {
-        const isArrayKey = /^\d+$/u.test(key);
+        const isArrayKey = /^\d+$/.test(key);
         if (!isObjectItem && !isArrayKey) {
             return `$${key}`;
         }

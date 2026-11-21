@@ -101,7 +101,7 @@ function isThenable<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
 
 /** The error, with what was waited for before its message, where it can be */
 function prefixMessage(error: unknown, message: string | undefined): unknown {
-    if (message === undefined || message === '' || !(error instanceof Error)) {
+    if (!message || !(error instanceof Error)) {
         return error;
     }
 
@@ -112,7 +112,7 @@ function prefixMessage(error: unknown, message: string | undefined): unknown {
         // The message of some errors is read-only, as a DOMException's
         return error;
     }
-    if (error.stack !== undefined) {
+    if (error.stack != null) {
         error.stack = error.stack.replace(original, error.message);
     }
 
@@ -243,7 +243,7 @@ class Wait<T> {
      * that is falsy, which counts as none, as in Vitest
      */
     #fail(functionError: unknown): void {
-        // oxlint-disable-next-line typescript/prefer-nullish-coalescing, typescript/strict-boolean-expressions
+        // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- A falsy error counts as none
         const error = functionError || this.#timedOut;
 
         this.#stop();

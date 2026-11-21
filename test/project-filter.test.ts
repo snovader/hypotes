@@ -3,7 +3,7 @@ import { fc, it } from 'hypotes/fast-check';
 import { ProjectFilter } from '#source/project-filter';
 
 /** Names of projects, with the characters that mean something in a regular expression */
-const name = fc.stringMatching(/^[@a-z/.+()[\]-]+$/u);
+const name = fc.stringMatching(/^[@a-z/.+()[\]-]+$/);
 
 describe('ProjectFilter', () => {
     it('should select every project without patterns', () => {

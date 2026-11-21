@@ -109,7 +109,7 @@ export function splitInlineMap(text: string): MappedCode {
     const end = trimmedEnd(text);
     // Most modules end in `}` or `;`, which can't end the map's base64, and
     // need no search of their code
-    if (end === 0 || !isBase64Digit(text.codePointAt(end - 1) ?? 0)) {
+    if (end === 0 || !isBase64Digit(text.charCodeAt(end - 1))) {
         return { code: text, map: undefined };
     }
 
@@ -119,7 +119,7 @@ export function splitInlineMap(text: string): MappedCode {
     }
 
     const data = dataUrlData(text, index + SOURCE_MAPPING_URL.length, end);
-    if (data === undefined) {
+    if (data == null) {
         return { code: text, map: undefined };
     }
 
@@ -160,7 +160,7 @@ export function chainSourceMap(
         ...sourceRoot,
         sources: sources.values(),
         sourcesContent:
-            sourcesContent === undefined
+            sourcesContent == null
                 ? undefined
                 : sources
                       .indices()
@@ -191,7 +191,7 @@ function chainLine(
 
         const [column, , originalLine, originalColumn, nameIndex] = segment;
         const segments = index.lines[originalLine];
-        if (segments === undefined) {
+        if (segments == null) {
             continue;
         }
 
@@ -204,12 +204,12 @@ function chainLine(
         const incomingName = segments[found + 4];
         const name =
             incomingName === -1
-                ? nameIndex === undefined
+                ? nameIndex == null
                     ? undefined
                     : mapNames[nameIndex]
                 : index.names[incomingName];
         chained.push(
-            name === undefined
+            name == null
                 ? [column, source, segments[found + 2], segments[found + 3]]
                 : [
                       column,
@@ -227,7 +227,7 @@ function chainLine(
 /** Where the whitespace at the end of the text starts */
 function trimmedEnd(text: string): number {
     let end = text.length;
-    while (end > 0 && isWhitespace(text.codePointAt(end - 1) ?? 0)) {
+    while (end > 0 && isWhitespace(text.charCodeAt(end - 1))) {
         end--;
     }
 
@@ -281,7 +281,7 @@ function dataUrlData(
     end: number
 ): string | undefined {
     const prefix = DATA_URLS.find(url => text.startsWith(url, start));
-    if (prefix === undefined) {
+    if (!prefix) {
         return undefined;
     }
 
@@ -364,7 +364,7 @@ function indexSourceMap(map: IncomingSourceMap): MapIndex {
         });
         addSection(lines, decoded, offset.line);
 
-        hasContent ||= section.sourcesContent !== undefined;
+        hasContent ||= section.sourcesContent != null;
         for (const [index, source] of section.sources.entries()) {
             sources.push(source);
             sourcesContent.push(section.sourcesContent?.[index] ?? null);
@@ -391,7 +391,7 @@ function addSection(lines: Lines, section: Lines, start: number): void {
 
     for (const [index, segments] of section.entries()) {
         const line = lines[start + index];
-        if (line === undefined) {
+        if (line == null) {
             lines.push(segments);
         } else {
             line.push(...segments);
@@ -422,7 +422,6 @@ function decodeMappings(mappings: string, offset: DecodeOffset): Lines {
         // A semicolon past the end ends the last line. Reading a character
         // there instead took a third of the time of chaining a small map,
         // and codePointAt() a quarter, though the mappings are base64.
-        // oxlint-disable-next-line unicorn/prefer-code-point -- As above
         const char = index < length ? mappings.charCodeAt(index) : SEMICOLON;
 
         if (char === COMMA || char === SEMICOLON) {
@@ -558,7 +557,7 @@ class Names {
 
     indexOf(name: string): number {
         let index = this.#indices.get(name);
-        if (index === undefined) {
+        if (index == null) {
             index = this.#values.push(name) - 1;
             this.#indices.set(name, index);
         }

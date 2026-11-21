@@ -8,7 +8,7 @@ export default async function* entryFile(
     let named = false;
 
     for await (const { data } of source) {
-        named ||= (data as { entryFile?: string }).entryFile !== undefined;
+        named ||= (data as { entryFile?: string }).entryFile != null;
     }
 
     yield String(named);

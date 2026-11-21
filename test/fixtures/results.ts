@@ -21,8 +21,8 @@ for await (const event of events) {
         results.push({
             name: data.name,
             passed: event.type === 'test:pass',
-            skipped: data.skip !== undefined && data.skip !== false,
-            todo: data.todo !== undefined && data.todo !== false,
+            skipped: data.skip != null && data.skip !== false,
+            todo: data.todo != null && data.todo !== false,
             file: data.file,
             line: data.line,
             error:
