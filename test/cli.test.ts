@@ -59,13 +59,13 @@ describe('hypotes', () => {
     });
 
     it("should run a project's files among those of the patterns", async () => {
-        const { stdout } = await hypotes(['--project=beta', '**/*.ts']);
+        // Which match a file of another project too, `in-bracket.ts`
+        const { stdout } = await hypotes(['--project=beta', '**/{broken,hook,in-*}.ts']);
 
         expect(files(stdout)).toStrictEqual([
             '|beta| broken.ts',
             '|beta| hook.ts',
-            '|beta| test/in-beta.ts',
-            '|beta| through.ts'
+            '|beta| test/in-beta.ts'
         ]);
     });
 
