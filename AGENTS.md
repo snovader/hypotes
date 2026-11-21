@@ -51,6 +51,27 @@ intent, not a requirement to preserve every detail.
   constraints, algorithms, units, external behavior, or implementation tradeoffs.
   Document public contracts where callers need that information.
 
+## Values and conditions
+
+- Test a nullable string, number, or boolean by its truthiness, as
+  `if (value)`, rather than by comparing it with `undefined` or `true`.
+  Do so only where '', 0, and false count as missing too: `isSet` in
+  `reporter.ts` compares, since node:test gives '' as the reason of
+  `skip('')`.
+- Check for a missing value with `== null` or `!= null`, which match both
+  null and undefined. Compare strictly only where the two mean different
+  things, as in `project.ts`, whose cache holds null for a directory without
+  a project, in `equals.ts`, which compares any values, and where
+  `source-map.ts` checks parsed JSON.
+- Default a nullable value with `??`. Write `||` only where '' or 0 is
+  replaced too, and say so, as `wait.ts` does for a falsy error.
+- Give a regular expression the `u` flag only where its pattern needs it, as
+  the `\p{ID_Continue}` in `title.ts` does. The flag also changes how `i`
+  folds case, and which escapes are valid.
+- Read an element by its index where the index is known to be in range, and
+  a UTF-16 code unit with `charCodeAt`. Keep `.at()` for an index that
+  counts from the end of an array that may be empty.
+
 ## Encapsulation and API design
 
 - Prefer private fields and method-style accessors, especially when access
@@ -174,6 +195,10 @@ intent, not a requirement to preserve every detail.
 
 - Design for CPU and memory efficiency from the outset. Avoid unnecessary copies,
   allocations, loops, conversions, and repeated computation.
+- Sort or reverse a copy that the function owns in place, with `.sort()` or
+  `.reverse()`, such as the result of `Object.keys()` or of a `filter`.
+  `toSorted()` there copies twice. Use it on an array that belongs to the
+  caller.
 - Balance performance against complexity and clarity. When the tradeoff is
   uncertain, run the code, measure representative workloads, and evaluate the
   result. Do not rely solely on intuition about what should be faster.
@@ -242,6 +267,10 @@ intent, not a requirement to preserve every detail.
 - `expect.extend()` and `expect.addEqualityTesters()` change every test in
   the process. A test that calls them leaves the matchers and testers as they
   were, as `test/equals.test.ts` does.
+- Give `vi.fn()` type arguments only where it has no implementation to take
+  its type from, which `hypotes/require-mock-type-parameters` asks for.
+  Write an asymmetric matcher, such as `expect.any(Number)`, in the value
+  that it's expected in: it's typed `any`, which tests may assign.
 - Fake timers, a faked date, and stubs last until they're undone, so a test
   file that sets them undoes them in an `afterEach`, as
   `test/timers.test.ts` and `test/stubs.test.ts` do.
@@ -353,6 +382,20 @@ intent, not a requirement to preserve every detail.
   exceptions. Change a shared setting in the packages, rather than
   overriding it here. `@snovader/oxc-config` needs Node 26 to load, which
   CI's checks of formatting and lint run on.
+- The shared rules leave the conventions of "Values and conditions" to the
+  code: they don't ask for a `u` flag, `.at()`, `toSorted()`, or
+  `codePointAt`, and they allow `== null`, a sequential `await` in a loop,
+  and a truthiness check of a nullable primitive. So no rule keeps those
+  conventions, and a review does.
+- Fix what the linter reports, rather than suppressing it. Where the code
+  that a rule asks for reads worse, keep the code, with a directive for that
+  line that names the rule and says why, as `wait.ts` does for its `||`.
+  The linter reports a directive that suppresses nothing, so remove one
+  along with what it was for.
+- `.yarnrc.yml` lets `@snovader/*` and `hypotes` past Yarn's minimal age
+  gate, with `npmPreapprovedPackages`, so that a release of the shared
+  configuration, or of hypotes itself, installs on the day that it's
+  published. Other packages wait out the gate.
 - oxlint loads `hypotes/oxlint` from `source/oxlint`, so that the package's
   tests are linted with the rules as they're written. The preset
   `@snovader/oxc-config/oxlint/hypotes` would load the published package

@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'hypotes';
 import { fc, it as property } from 'hypotes/fast-check';
 
 /** A name that no global and no environment variable has */
-const unused = fc.stringMatching(/^[a-z]{1,8}$/u).map(name => `hypotes_stub_${name}`);
+const unused = fc.stringMatching(/^[a-z]{1,8}$/).map(name => `hypotes_stub_${name}`);
 
 /** A value that an environment variable keeps as it's set, on each platform */
-const value = fc.stringMatching(/^[ -~]{0,16}$/u);
+const value = fc.stringMatching(/^[ -~]{0,16}$/);
 
 afterEach(() => {
     vi.unstubAllGlobals();

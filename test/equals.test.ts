@@ -99,7 +99,7 @@ function copyOf(value: unknown): unknown {
 
     for (const key of Reflect.ownKeys(value)) {
         const descriptor = Object.getOwnPropertyDescriptor(value, key);
-        if (descriptor?.enumerable === true) {
+        if (descriptor?.enumerable) {
             Reflect.set(copy, key, copyOf(Reflect.get(value, key)));
         }
     }
@@ -167,7 +167,7 @@ describe('fastEquality', () => {
             const answer = fastEquality.call({ equals }, actual, expected, testers);
 
             // Strictly or not, which the tester isn't told
-            if (answer !== undefined) {
+            if (answer != null) {
                 expect(answer).toBe(equals(actual, expected, testers.slice(1), true));
                 expect(answer).toBe(equals(actual, expected, testers.slice(1), false));
             }
@@ -211,15 +211,14 @@ describe('fastEquality', () => {
     });
 
     it('should compare what an asymmetric matcher holds as toEqual does, in toStrictEqual too', () => {
-        const containing: unknown = expect.objectContaining({ a: { b: 1 } });
-        const including: unknown = expect.arrayContaining([{ b: 1 }]);
-
-        expect({ a: { b: 1, c: undefined } }).toStrictEqual(containing);
-        expect([{ b: 1, c: undefined }]).toStrictEqual(including);
+        expect({ a: { b: 1, c: undefined } }).toStrictEqual(
+            expect.objectContaining({ a: { b: 1 } })
+        );
+        expect([{ b: 1, c: undefined }]).toStrictEqual(expect.arrayContaining([{ b: 1 }]));
     });
 
     it.each([
-        ['the properties of an array besides its elements', /b/u.exec('abc'), ['b']],
+        ['the properties of an array besides its elements', /b/.exec('abc'), ['b']],
         ['symbol keys', { a: 1, [Symbol.for('key')]: 2 }, { a: 1 }],
         [
             'the properties of a typed array besides its elements',

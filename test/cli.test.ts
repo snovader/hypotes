@@ -44,7 +44,7 @@ async function hypotes(args: readonly string[], cwd = PROJECTS): Promise<Run> {
 
 /** The files that a report has rows of, with their projects */
 function files(report: string): string[] {
-    return Array.from(report.matchAll(/^ [✓❯] (\S+ \S+) \(/gmu), match => match[1]);
+    return Array.from(report.matchAll(/^ [✓❯] (\S+ \S+) \(/gm), match => match[1]);
 }
 
 describe('hypotes', () => {
@@ -253,7 +253,7 @@ describe('hypotes', () => {
     it('should print how it is used with --help, and run nothing', async () => {
         const { stdout, code } = await hypotes(['--help']);
 
-        expect(stdout).toMatch(/^Usage: hypotes /u);
+        expect(stdout).toMatch(/^Usage: hypotes /);
         expect(code).toBe(0);
     });
 

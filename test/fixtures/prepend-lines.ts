@@ -83,7 +83,7 @@ registerHooks({
     load(url, context, nextLoad) {
         const loaded = nextLoad(url, context);
         const { source } = loaded;
-        if (url !== PREPENDED || source === undefined) {
+        if (url !== PREPENDED || source == null) {
             return loaded;
         }
 

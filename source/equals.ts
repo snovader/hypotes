@@ -58,7 +58,7 @@ type TypedArray =
  */
 export const fastEquality: Tester = function (a, b, customTesters) {
     const strict = strictnessOf(customTesters);
-    return strict === undefined ? undefined : compare(a, b, strict, 0);
+    return strict == null ? undefined : compare(a, b, strict, 0);
 };
 
 /**
@@ -169,7 +169,7 @@ function compareObjects(
         const value = a[key];
         if (Object.hasOwn(b, key)) {
             const equal = compare(value, b[key], strict, depth + 1);
-            if (equal !== true) {
+            if (!equal) {
                 return equal;
             }
         } else if (value === undefined) {
@@ -233,7 +233,7 @@ function compareArrays(
         }
 
         const equal = compare(value, other, strict, depth + 1);
-        if (equal !== true) {
+        if (!equal) {
             return equal;
         }
     }

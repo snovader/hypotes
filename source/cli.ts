@@ -240,7 +240,7 @@ function follow(node: ChildProcess): void {
             process.off(forwarded, forward);
         }
 
-        if (signal === null) {
+        if (signal == null) {
             process.exitCode = code ?? 1;
         } else {
             process.kill(process.pid, signal);

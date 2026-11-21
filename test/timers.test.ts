@@ -150,7 +150,7 @@ describe('advancing fake timers', () => {
             const waiting = vi.getTimerCount();
             vi.useRealTimers();
 
-            const due = delays.filter(delay => delay <= ms).toSorted((a, b) => a - b);
+            const due = delays.filter(delay => delay <= ms).sort((a, b) => a - b);
             expect(ran).toEqual(due);
             expect(waiting).toBe(delays.length - due.length);
         }
@@ -234,7 +234,7 @@ describe('advancing fake timers', () => {
         vi.useFakeTimers({ loopLimit: 5 });
         setInterval(() => undefined, 10);
 
-        expect(() => vi.runAllTimers()).toThrow(/5 timers/u);
+        expect(() => vi.runAllTimers()).toThrow(/5 timers/);
     });
 
     it('should remove the waiting timers with vi.clearAllTimers()', () => {

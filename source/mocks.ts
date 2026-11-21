@@ -72,7 +72,7 @@ const PACKAGE = 'hypotes-package:';
  * The drive of a Windows path, such as `C:\a.ts`, which parses as a URL whose
  * scheme is the drive's letter
  */
-const DRIVE = /^[a-z]:/iu;
+const DRIVE = /^[a-z]:/i;
 
 /**
  * The mocks whose factories run the code that reads this, or started it: an
@@ -109,7 +109,7 @@ class ModuleMock {
     run(): Promise<void> | undefined {
         const around = running.getStore();
         if (this.#ran) {
-            return around?.has(this) === true ? undefined : this.#settling;
+            return around?.has(this) ? undefined : this.#settling;
         }
 
         this.#ran = true;
@@ -137,7 +137,7 @@ class ModuleMock {
         void this.run();
 
         const outcome = this.#outcome;
-        if (outcome === undefined) {
+        if (outcome == null) {
             throw new Error(
                 `The factory of the mock of ${nameOf(this.#original)} returned a promise, which hadn't settled when the module was imported. A module that mocks modules waits for their factories before its imports, so import it from there, after the mock, or from a module that it imports. Mocks settle in the order of their calls, so mock a module that a factory imports before the mock of that factory.`
             );
@@ -193,7 +193,7 @@ export class ModuleMocks {
     /** Installs the registry of the process, unless one is installed */
     static install(): ModuleMocks | undefined {
         const global = globalThis as { [MOCKS]?: ModuleMocks };
-        if (global[MOCKS] !== undefined) {
+        if (global[MOCKS] != null) {
             return undefined;
         }
 
@@ -205,7 +205,7 @@ export class ModuleMocks {
     /** The registry of the process, which `method` needs */
     static installed(method: string): ModuleMocks {
         const mocks = (globalThis as { [MOCKS]?: ModuleMocks })[MOCKS];
-        if (mocks === undefined) {
+        if (mocks == null) {
             throw new Error(
                 `${method} needs the module mocks that node preloads with --import hypotes/register`
             );
@@ -234,7 +234,6 @@ export class ModuleMocks {
      */
     async settle(): Promise<void> {
         for (const mock of this.#mocks.values()) {
-            // oxlint-disable-next-line eslint/no-await-in-loop -- In the order of the mocks, so that a factory can import those before it
             await mock.run();
         }
     }
@@ -282,7 +281,7 @@ export class ModuleMocks {
             const mock = namesNoPackage(error)
                 ? this.#mocks.get(PACKAGE + specifier)
                 : undefined;
-            if (mock === undefined) {
+            if (mock == null) {
                 throw error;
             }
             return { url: mock.url, format: 'module', shortCircuit: true };
@@ -290,7 +289,7 @@ export class ModuleMocks {
 
         const mock = this.#mocks.get(resolved.url);
 
-        return mock === undefined
+        return mock == null
             ? resolved
             : { url: mock.url, format: 'module', shortCircuit: true };
     }

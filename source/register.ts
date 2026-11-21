@@ -9,7 +9,7 @@ import { ModuleMocks } from './mocks.ts';
 const mocks = ModuleMocks.install();
 
 // Unless another copy of this package installed its own
-if (mocks !== undefined) {
+if (mocks != null) {
     registerHooks({
         resolve: (specifier, context, nextResolve) =>
             mocks.resolve(specifier, context, nextResolve),
