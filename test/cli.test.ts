@@ -124,6 +124,21 @@ describe('hypotes', () => {
         expect(long.code).toBe(0);
     });
 
+    it('should end a file whose test leaves a timer running', async () => {
+        // The timer writes as it runs, a second after the test has passed
+        const { stdout, code } = await hypotes(['beta/leaves.ts']);
+
+        expect(stdout).not.toContain('the timer ran');
+        expect(code).toBe(0);
+    });
+
+    it('should wait for what a test leaves running with --no-test-force-exit', async () => {
+        const { stdout, code } = await hypotes(['--no-test-force-exit', 'beta/leaves.ts']);
+
+        expect(stdout).toContain('the timer ran\n');
+        expect(code).toBe(0);
+    });
+
     it("should run a project's test files, which Vitest's pattern finds", async () => {
         const { stdout, code } = await hypotes(['--project', '@fixture/alpha']);
 

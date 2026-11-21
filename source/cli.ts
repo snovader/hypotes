@@ -8,12 +8,17 @@
 // `hypotes/reporter`, and passes the rest of its arguments on, so node:test's
 // flags, such as `--watch` and `--test-name-pattern`, work as they do there.
 //
-// It has two of Vitest's defaults where node:test's differ, each of which
+// It has three of Vitest's defaults where node:test's differ, each of which
 // an argument replaces. Named no files, node:test runs every file in a
 // `test` directory, the helpers there too, so the command names Vitest's
-// pattern of test files to it. And node:test's tests have no timeout, so
-// the command passes Vitest's, as `--test-timeout`, which node:test gives
-// to hooks as well.
+// pattern of test files to it. node:test's tests have no timeout, so the
+// command passes Vitest's, as `--test-timeout`, which node:test gives to
+// hooks as well. And node:test waits for what a test leaves running, a
+// timer or a server, where Vitest ends a file's worker after its tests, so
+// the command passes `--test-force-exit`: without it, a test that has
+// timed out still holds the run. Node refuses the flag with `--watch`, so
+// the command leaves it out then, and a `--no-test-force-exit` after it
+// turns it off, as Node reads the later of the two.
 //
 // `--project` is the one flag of its own, after Vitest's. node:test can't
 // select files by their package, so with `--project` this names the
@@ -41,7 +46,9 @@ follows a =, or it's taken for a pattern of files, and node fails the flag.
 
 Without files or patterns, it runs the files that match
 ${DEFAULT_PATTERN}
-and without --test-timeout, a test or a hook fails after 5 seconds.
+and without --test-timeout, a test or a hook fails after 5 seconds. It ends
+each file once its tests are done, whatever they left running, unless it's
+given --no-test-force-exit or --watch.
 
   --project <name>  Runs only the test files of the package with the name in
                     its package.json. Can be repeated. A * matches any
@@ -206,6 +213,7 @@ function nodeArguments({ projects, rest }: Arguments, cwd: string): string[] {
         ...(hasFlag(flags, '--test-timeout')
             ? []
             : [`--test-timeout=${DEFAULT_TIMEOUT}`]),
+        ...(hasFlag(flags, '--watch') ? [] : ['--test-force-exit']),
         ...flags,
         SEPARATOR,
         ...files

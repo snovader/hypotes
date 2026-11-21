@@ -125,13 +125,16 @@ intent, not a requirement to preserve every detail.
   tells a flag from a file or a pattern only by the leading `-`, and passes the
   flags, a `--`, and then the files, so that Node tells them apart the same way:
   Node fails a flag whose value doesn't follow a `=`, where it would otherwise
-  take a pattern for the value. Its one flag is Vitest's `--project`. It has two
-  of Vitest's defaults, where node:test's surprise those who come from Vitest:
-  named no files, it names Vitest's default `include` to node:test, which
-  otherwise runs the helpers in a `test` directory, and it passes
-  `--test-timeout=5000` unless it's given one. It doesn't read Node's
-  configuration file, so a `test-timeout` or a `test-reporter` there doesn't
-  take the place of its own, which the README says. The pattern is Vitest's as
+  take a pattern for the value. Its one flag is Vitest's `--project`. It has
+  three of Vitest's defaults, where node:test's surprise those who come from
+  Vitest: named no files, it names Vitest's default `include` to node:test,
+  which otherwise runs the helpers in a `test` directory, it passes
+  `--test-timeout=5000` unless it's given one, and it passes
+  `--test-force-exit`, so that what a test leaves running doesn't hold the
+  run, unless it's given `--watch`, which Node refuses with it. It doesn't
+  read Node's configuration file, so a `test-timeout`, a `test-reporter`, or
+  a `test-force-exit` there doesn't take the place of its own, which the
+  README says. The pattern is Vitest's as
   it's written, `.tsx` and `.jsx` too, which a preload of the caller's may run,
   and `.ts` under `--no-strip-types` too, which the README says. node:test can't
   select files by their package, so `test-files.ts` names each selected

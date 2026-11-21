@@ -473,15 +473,15 @@ Messages have colours only where Node prints them: to a terminal, or with
 ## The `hypotes` command
 
 `hypotes` runs `node --test` with hypotes' preload and reporter, and with
-Vitest's defaults for the test files and the timeout. It passes its other
-arguments on. These two commands do the same:
+Vitest's defaults for the test files, the timeout, and how a test file
+ends. It passes its other arguments on. These two commands do the same:
 
 ```bash
 npx hypotes
 ```
 
 ```bash
-node --import hypotes/register --test --test-reporter=hypotes/reporter --test-timeout=5000 "**/*.{test,spec}.?(c|m)[jt]s?(x)"
+node --import hypotes/register --test --test-reporter=hypotes/reporter --test-timeout=5000 --test-force-exit "**/*.{test,spec}.?(c|m)[jt]s?(x)"
 ```
 
 node:test's flags work as they do with `node --test`, as in
@@ -539,9 +539,30 @@ A `--test-timeout` of your own takes its place, as in
 - **Hooks have the same timeout.** node:test gives the timeout to hooks too,
   so a hook fails after 5 seconds. In Vitest, a hook has 10. Give a slow
   hook its own, as in `beforeAll(fn, 10_000)`.
-- **A timeout fails the test, but doesn't end what it started.** A test that
-  leaves a timer or a server running keeps its file's process alive after it
-  has failed. Under `node --test` too, the file then never ends.
+- **A timeout fails the test, but doesn't end what it started.** A timer or
+  a server that the test left running goes on. The command ends the file's
+  process anyway, as [the next section](#what-a-test-leaves-running) says.
+
+### What a test leaves running
+
+The command passes Node's
+[`--test-force-exit`](https://nodejs.org/api/cli.html#--test-force-exit).
+node:test then ends each file's process once its tests and hooks are done,
+as Vitest ends a file's worker. Without it, a timer, a server, or an open
+connection that a test left behind keeps the process alive, and holds a CI
+job until the job's own limit, even after the test has timed out.
+
+- **A leak passes unseen.** A test that leaves something running passes,
+  and nothing says so. To find such tests, run
+  `npx hypotes --no-test-force-exit`: the run then waits for them.
+- **Work that isn't awaited is cut off.** What a test starts and doesn't
+  wait for, such as a write to a file, may not finish. Await it in the test
+  or in a hook.
+- **`--watch`.** Node refuses `--test-force-exit` together with `--watch`,
+  so the command leaves it out under `--watch`.
+  It doesn't see a `watch` in
+  [Node's configuration file](#nodes-configuration-file), so pass
+  `--watch` to the command instead.
 
 ### Node's configuration file
 
@@ -551,7 +572,7 @@ flag is `--experimental-config-file`. Node's
 [documentation](https://nodejs.org/api/cli.html) has what the file takes.
 
 The file's settings reach node:test as they do under `node --test`, but for
-two, which the command passes flags of its own for:
+three, which the command passes flags of its own for:
 
 - **`test-timeout`.** The command's 5 seconds take its place, since a flag
   overrides the file. Pass `--test-timeout` to the command instead.
@@ -559,6 +580,8 @@ two, which the command passes flags of its own for:
   fails: it then wants a `--test-reporter-destination` for each. Leave the
   reporter out of the file, and pass `--test-reporter` to the command
   instead.
+- **`test-force-exit`.** The command's flag takes its place. Pass
+  `--no-test-force-exit` to the command instead.
 
 ### Running one project
 
