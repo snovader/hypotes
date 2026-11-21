@@ -64,7 +64,10 @@ export function createStubsAPI<Vi>(vi: () => Vi): StubsAPI<Vi> {
     /** Each stubbed variable's value before its first stub, if it was set */
     const envs = new Map<string, string | undefined>();
 
-    function stubGlobal(name: string | symbol | number, value: unknown): void {
+    const stubGlobal = (
+        name: string | symbol | number,
+        value: unknown
+    ): void => {
         if (!globals.has(name)) {
             globals.set(
                 name,
@@ -78,14 +81,17 @@ export function createStubsAPI<Vi>(vi: () => Vi): StubsAPI<Vi> {
             configurable: true,
             enumerable: true
         });
-    }
+    };
 
-    function stubEnv(name: string, value: string | boolean | undefined): void {
+    const stubEnv = (
+        name: string,
+        value: string | boolean | undefined
+    ): void => {
         if (!envs.has(name)) {
             envs.set(name, process.env[name]);
         }
 
-        if (value === undefined) {
+        if (value == null) {
             delete process.env[name];
         } else if (BOOLEAN_ENVS.has(name)) {
             // A string counts as Vitest counts it, by its truthiness
@@ -93,29 +99,29 @@ export function createStubsAPI<Vi>(vi: () => Vi): StubsAPI<Vi> {
         } else {
             process.env[name] = String(value);
         }
-    }
+    };
 
-    function unstubAllGlobals(): void {
+    const unstubAllGlobals = (): void => {
         for (const [name, original] of globals) {
-            if (original === undefined) {
+            if (original == null) {
                 Reflect.deleteProperty(globalThis, name);
             } else {
                 Object.defineProperty(globalThis, name, original);
             }
         }
         globals.clear();
-    }
+    };
 
-    function unstubAllEnvs(): void {
+    const unstubAllEnvs = (): void => {
         for (const [name, original] of envs) {
-            if (original === undefined) {
+            if (original == null) {
                 delete process.env[name];
             } else {
                 process.env[name] = original;
             }
         }
         envs.clear();
-    }
+    };
 
     return {
         stubEnv: chained(vi, stubEnv),

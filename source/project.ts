@@ -57,7 +57,7 @@ export class Projects {
     #find(directory: string): Project | undefined {
         const name = packageName(directory);
 
-        if (name !== undefined) {
+        if (name) {
             return { name, directory };
         }
 

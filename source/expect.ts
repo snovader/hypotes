@@ -147,7 +147,10 @@ function commonEnd(
 ): number {
     const length = Math.min(a.length, b.length) - start;
     let count = 0;
-    while (count < length && a.at(-1 - count) === b.at(-1 - count)) {
+    while (
+        count < length &&
+        a[a.length - 1 - count] === b[b.length - 1 - count]
+    ) {
         count++;
     }
 
@@ -200,17 +203,14 @@ type Assert = ((this: Chai.AssertionStatic, ...args: unknown[]) => void) & {
 // oxlint-disable-next-line typescript/unbound-method -- Called with each assertion as `this`
 const assert = chai.Assertion.prototype.assert as unknown as Assert;
 
-if (assert[WITH_DIFF] !== true) {
+if (!assert[WITH_DIFF]) {
     const assertWithDiff: Assert = function (this, ...args) {
         try {
             assert.apply(this, args);
         } catch (error) {
-            if (
-                error instanceof chai.AssertionError &&
-                error.showDiff === true
-            ) {
+            if (error instanceof chai.AssertionError && error.showDiff) {
                 const changes = describeDiff(error.actual, error.expected);
-                if (changes !== undefined) {
+                if (changes != null) {
                     error.message += `\n\n+ actual - expected\n\n${changes}`;
                 }
             }

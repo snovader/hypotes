@@ -18,24 +18,24 @@ function section(start: string, end: string): string {
 
 /** What `pattern` captures in each of its matches, in order */
 function captures(text: string, pattern: RegExp): string[] {
-    return Array.from(text.matchAll(pattern), match => match[1]).toSorted();
+    return Array.from(text.matchAll(pattern), match => match[1]).sort();
 }
 
 describe('README', () => {
-    const rules = Object.keys(plugin.rules).toSorted();
+    const rules = Object.keys(plugin.rules).sort();
     const oxlint = section('## Lint rules', '\n## ');
 
     it('configures each rule of hypotes/oxlint', () => {
-        expect(captures(oxlint, /"hypotes\/([a-z-]+)":/gu)).toEqual(rules);
+        expect(captures(oxlint, /"hypotes\/([a-z-]+)":/g)).toEqual(rules);
     });
 
     it('describes each rule of hypotes/oxlint', () => {
-        expect(captures(oxlint, /^\| `([a-z-]+)`/gmu)).toEqual(rules);
+        expect(captures(oxlint, /^\| `([a-z-]+)`/gm)).toEqual(rules);
     });
 
     it('lists each member of vi', () => {
         const members = section('with these members:', '\n\n');
 
-        expect(captures(members, /`([A-Za-z]+)`/gu)).toEqual(Object.keys(vi).toSorted());
+        expect(captures(members, /`([A-Za-z]+)`/g)).toEqual(Object.keys(vi).sort());
     });
 });

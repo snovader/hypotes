@@ -125,7 +125,7 @@ const UNHOISTED: ReadonlyMap<string, string> = new Map([
 ]);
 
 /** Files of TypeScript, where a call can take type arguments */
-const TYPESCRIPT = /\.[cm]?tsx?$/u;
+const TYPESCRIPT = /\.[cm]?tsx?$/;
 
 /** An `expect()` call, the modifiers after it, such as `.not`, and its matcher */
 interface ExpectChain {
@@ -177,9 +177,9 @@ function variableOf(
     identifier: Identifier
 ): Variable | undefined {
     let scope: Scope | null = context.sourceCode.getScope(identifier);
-    while (scope !== null) {
+    while (scope != null) {
         const variable = scope.set.get(identifier.name);
-        if (variable !== undefined) {
+        if (variable != null) {
             return variable;
         }
         scope = scope.upper;
@@ -246,7 +246,7 @@ function memberAfter(
         return undefined;
     }
 
-    return names === undefined || names.has(parent.property.name)
+    return names == null || names.has(parent.property.name)
         ? parent
         : undefined;
 }
@@ -255,7 +255,7 @@ function memberAfter(
 function* ancestorsOf(node: Node): Generator<Node> {
     for (
         let ancestor = node.parent;
-        ancestor !== null;
+        ancestor != null;
         ancestor = ancestor.parent
     ) {
         yield ancestor;
@@ -292,7 +292,7 @@ function declarationOf(
     const target = declarerOf(call.callee);
     const imported =
         target.type === 'Identifier' ? importOf(context, target) : undefined;
-    if (imported === undefined) {
+    if (imported == null) {
         return undefined;
     }
 
@@ -367,10 +367,10 @@ function isFunctionExpression(node: Node): node is FunctionExpression {
  */
 function functionOf(call: CallExpression): Argument | undefined {
     const [, first, second] = call.arguments;
-    if (first === undefined || isFunctionExpression(first)) {
+    if (first == null || isFunctionExpression(first)) {
         return first;
     }
-    if (second !== undefined && isFunctionExpression(second)) {
+    if (second != null && isFunctionExpression(second)) {
         return second;
     }
 
@@ -445,7 +445,7 @@ function expectChainOf(
     const modifiers: StaticMemberExpression[] = [];
     let end: Node = call;
     let modifier = memberAfter(end, MODIFIERS);
-    while (modifier !== undefined) {
+    while (modifier != null) {
         modifiers.push(modifier);
         end = modifier;
         modifier = memberAfter(end, MODIFIERS);
@@ -467,14 +467,14 @@ function comparisonOf(
     call: CallExpression
 ): Comparison | undefined {
     const chain = expectChainOf(context, call);
-    if (chain === undefined) {
+    if (chain == null) {
         return undefined;
     }
 
     const { matcher, matcherCall } = chain;
     if (
-        matcher === undefined ||
-        matcherCall === undefined ||
+        matcher == null ||
+        matcherCall == null ||
         !EQUALITY_MATCHERS.has(matcher.property.name)
     ) {
         return undefined;
@@ -496,7 +496,7 @@ function runsInTest(context: Context, call: CallExpression): boolean {
     for (const ancestor of ancestorsOf(call)) {
         if (ancestor.type === 'CallExpression') {
             const block = blockOf(context, ancestor);
-            if (block !== undefined) {
+            if (block != null) {
                 return block === 'test';
             }
         } else if (
@@ -526,7 +526,7 @@ function isAwaitedOrReturned(promise: CallExpression | Identifier): boolean {
     }
 
     const combined = promiseCallOf(promise);
-    return combined !== undefined && isAwaitedOrReturned(combined);
+    return combined != null && isAwaitedOrReturned(combined);
 }
 
 /**
@@ -636,8 +636,8 @@ function replaceMatcher(comparison: Comparison, preferred: string): Fix {
  */
 function isToDo(declaration: Declaration): boolean {
     return (
-        memberNamed(declaration, 'todo') !== undefined ||
-        optionNamed(declaration.call, 'todo') !== undefined
+        memberNamed(declaration, 'todo') != null ||
+        optionNamed(declaration.call, 'todo') != null
     );
 }
 
@@ -688,7 +688,7 @@ function titleOf(context: Context, call: CallExpression): Title | undefined {
 
     // A template with an invalid escape has no cooked text
     const [{ value }] = title.quasis;
-    return value.cooked === null
+    return value.cooked == null
         ? undefined
         : { node: title, cooked: value.cooked, raw: value.raw };
 }
@@ -801,7 +801,7 @@ function* promisesAround(
     for (const ancestor of ancestorsOf(node)) {
         if (
             ancestor.type === 'CallExpression' &&
-            blockOf(context, ancestor) !== undefined
+            blockOf(context, ancestor) != null
         ) {
             return;
         }
@@ -809,7 +809,7 @@ function* promisesAround(
         const call = isFunctionExpression(ancestor)
             ? promiseCallTaking(ancestor)
             : undefined;
-        if (call !== undefined) {
+        if (call != null) {
             yield chainEndOf(call);
         }
     }
@@ -852,7 +852,7 @@ function isExpectedToSettle(
     }
 
     const chain = expectChainOf(context, parent);
-    return chain !== undefined && hasModifier(chain, ASYNC_MODIFIERS);
+    return chain != null && hasModifier(chain, ASYNC_MODIFIERS);
 }
 
 /** The variable that a promise is assigned to, where it's declared or later */
@@ -941,7 +941,7 @@ function hoistingSuggestions(
     }
 
     const unhoisted = UNHOISTED.get(method.property.name);
-    if (unhoisted !== undefined) {
+    if (unhoisted) {
         suggestions.push({
             desc: `Call vi.${unhoisted}(), which runs where it's called`,
             fix: fixer => fixer.replaceText(method.property, unhoisted)
@@ -1052,12 +1052,12 @@ export const validExpect: Rule = {
         return {
             CallExpression(call): void {
                 const chain = expectChainOf(context, call);
-                if (chain === undefined) {
+                if (chain == null) {
                     return;
                 }
 
                 const { matcherCall } = chain;
-                if (matcherCall === undefined) {
+                if (matcherCall == null) {
                     context.report({
                         node: call,
                         message:
@@ -1093,15 +1093,15 @@ export const preferToBe: Rule = {
                 const comparison = comparisonOf(context, call);
                 const [expected] = comparison?.matcherCall.arguments ?? [];
                 if (
-                    comparison === undefined ||
-                    expected === undefined ||
+                    comparison == null ||
+                    expected == null ||
                     comparison.matcherCall.arguments.length !== 1
                 ) {
                     return;
                 }
 
                 const preferred = preferredMatcher(comparison, expected);
-                if (preferred === undefined) {
+                if (!preferred) {
                     return;
                 }
 
@@ -1135,9 +1135,9 @@ export const preferToHaveLength: Rule = {
                 const comparison = comparisonOf(context, call);
                 const [actual] = call.arguments;
                 if (
-                    comparison === undefined ||
+                    comparison == null ||
                     call.arguments.length !== 1 ||
-                    actual === undefined ||
+                    actual == null ||
                     !isNamedMember(actual, LENGTH)
                 ) {
                     return;
@@ -1173,12 +1173,12 @@ export const noFocusedTests: Rule = {
         return {
             CallExpression(call): void {
                 const declaration = declarationOf(context, call);
-                if (declaration === undefined) {
+                if (declaration == null) {
                     return;
                 }
 
                 const only = memberNamed(declaration, 'only');
-                if (only !== undefined) {
+                if (only != null) {
                     context.report({
                         node: only.property,
                         message:
@@ -1197,7 +1197,7 @@ export const noFocusedTests: Rule = {
                 }
 
                 const option = optionNamed(call, 'only');
-                if (option !== undefined) {
+                if (option != null) {
                     context.report({
                         node: option,
                         message:
@@ -1221,13 +1221,13 @@ export const noDisabledTests: Rule = {
         return {
             CallExpression(call): void {
                 const declaration = declarationOf(context, call);
-                if (declaration === undefined) {
+                if (declaration == null) {
                     return;
                 }
 
                 const kind = nameOfKind(declaration);
                 const skip = memberNamed(declaration, 'skip');
-                if (skip !== undefined) {
+                if (skip != null) {
                     context.report({
                         node: skip.property,
                         message: `Expected ${kind} to run, rather than be skipped with .skip`
@@ -1235,7 +1235,7 @@ export const noDisabledTests: Rule = {
                 }
 
                 const option = optionNamed(call, 'skip');
-                if (option !== undefined) {
+                if (option != null) {
                     context.report({
                         node: option,
                         message: `Expected ${kind} to run, rather than be skipped with the skip option`
@@ -1244,7 +1244,7 @@ export const noDisabledTests: Rule = {
 
                 if (
                     declaration.kind === 'test' &&
-                    functionOf(call) === undefined &&
+                    functionOf(call) == null &&
                     !isToDo(declaration)
                 ) {
                     context.report({
@@ -1270,13 +1270,13 @@ export const warnTodo: Rule = {
         return {
             CallExpression(call): void {
                 const declaration = declarationOf(context, call);
-                if (declaration === undefined) {
+                if (declaration == null) {
                     return;
                 }
 
                 const kind = nameOfKind(declaration);
                 const todo = memberNamed(declaration, 'todo');
-                if (todo !== undefined) {
+                if (todo != null) {
                     context.report({
                         node: todo.property,
                         message: `Expected ${kind} to be written, rather than marked as to do with .todo`
@@ -1284,7 +1284,7 @@ export const warnTodo: Rule = {
                 }
 
                 const option = optionNamed(call, 'todo');
-                if (option !== undefined) {
+                if (option != null) {
                     context.report({
                         node: option,
                         message: `Expected ${kind} to be written, rather than marked as to do with the todo option`
@@ -1309,7 +1309,7 @@ export const validTitle: Rule = {
             CallExpression(call): void {
                 const declaration = declarationOf(context, call);
                 const title = declaration && titleOf(context, call);
-                if (declaration === undefined || title === undefined) {
+                if (declaration == null || title == null) {
                     return;
                 }
 
@@ -1321,7 +1321,7 @@ export const validTitle: Rule = {
                     return;
                 }
 
-                if (/^\s|\s$/u.test(title.cooked)) {
+                if (/^\s|\s$/.test(title.cooked)) {
                     reportSpaces(context, title);
                 }
                 if (startsWithWord(title.cooked, declaration.name)) {
@@ -1349,7 +1349,7 @@ export const validDescribeCallback: Rule = {
                 }
 
                 const callback = functionOf(call);
-                if (callback === undefined) {
+                if (callback == null) {
                     if (!isToDo(declaration)) {
                         context.report({
                             node: call.arguments[0] ?? call,
@@ -1371,7 +1371,7 @@ export const validDescribeCallback: Rule = {
                 const forEachRow =
                     memberNamed(declaration, 'each') ??
                     memberNamed(declaration, 'for');
-                if (forEachRow === undefined && callback.params.length > 0) {
+                if (forEachRow == null && callback.params.length > 0) {
                     context.report({
                         node: callback,
                         message:
@@ -1380,7 +1380,7 @@ export const validDescribeCallback: Rule = {
                 }
 
                 const returned = returnOf(callback);
-                if (returned !== undefined) {
+                if (returned != null) {
                     context.report({
                         node: returned,
                         message:
@@ -1404,7 +1404,7 @@ export const noConditionalTests: Rule = {
         return {
             CallExpression(call): void {
                 const declaration = declarationOf(context, call);
-                if (declaration === undefined || !isInIfStatement(call)) {
+                if (declaration == null || !isInIfStatement(call)) {
                     return;
                 }
 
@@ -1468,8 +1468,8 @@ export const requireToThrowMessage: Rule = {
                 const chain = expectChainOf(context, call);
                 const matcher = chain?.matcher;
                 if (
-                    chain === undefined ||
-                    matcher === undefined ||
+                    chain == null ||
+                    matcher == null ||
                     chain.matcherCall?.arguments.length !== 0 ||
                     !THROW_MATCHERS.has(matcher.property.name) ||
                     hasModifier(chain, NOT)
@@ -1536,8 +1536,8 @@ export const hoistedApisOnTop: Rule = {
                 const method = viMethodOf(context, call);
                 const name = method?.property.name;
                 if (
-                    method === undefined ||
-                    name === undefined ||
+                    method == null ||
+                    name == null ||
                     !HOISTED_METHODS.has(name) ||
                     isHoistable(call, name)
                 ) {

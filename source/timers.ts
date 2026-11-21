@@ -175,11 +175,11 @@ class FakeTimers {
         const userConfig = { ...DEFAULT_CONFIG, ...config };
         let { toFake, toNotFake } = userConfig;
 
-        if (toFake === undefined && toNotFake === undefined) {
+        if (toFake == null && toNotFake == null) {
             toFake = this.#fakeable().filter(
                 timer => !NODE_INTERNAL.includes(timer)
             );
-        } else if (toFake === undefined && toNotFake !== undefined) {
+        } else if (toFake == null && toNotFake != null) {
             toNotFake = [...new Set([...toNotFake, ...NODE_INTERNAL])];
         }
 
@@ -194,7 +194,7 @@ class FakeTimers {
     }
 
     useRealTimers(): void {
-        if (this.#clock === undefined) {
+        if (this.#clock == null) {
             return;
         }
 
@@ -274,9 +274,8 @@ class FakeTimers {
             return;
         }
 
-        const fakingDate =
-            date === undefined ? new Date(realNow()) : new Date(date);
-        if (this.#clock === undefined) {
+        const fakingDate = date == null ? new Date(realNow()) : new Date(date);
+        if (this.#clock == null) {
             this.#install({
                 now: fakingDate,
                 toFake: ['Date', 'Temporal'],
@@ -289,7 +288,7 @@ class FakeTimers {
     }
 
     getMockedSystemTime(): Date | null {
-        if (this.#fakingTime && this.#clock !== undefined) {
+        if (this.#fakingTime && this.#clock != null) {
             return new Date(this.#clock.now);
         }
 
@@ -320,7 +319,7 @@ class FakeTimers {
 
     /** The clock, for the members that need the timers to be fake */
     #fakeClock(): Clock {
-        if (!this.#fakingTime || this.#clock === undefined) {
+        if (!this.#fakingTime || this.#clock == null) {
             throw new Error(
                 'A function to advance timers was called but the timers APIs are not mocked. ' +
                     'Call `vi.useFakeTimers()` in the test file first.'
@@ -361,7 +360,7 @@ class FakeTimers {
 
     /** @sinonjs/fake-timers, which loads once a test fakes the timers or the date */
     #loadContext(): SinonFakeTimers.FakeTimers {
-        if (this.#context === undefined) {
+        if (this.#context == null) {
             const { withGlobal } =
                 require('@sinonjs/fake-timers') as typeof SinonFakeTimers;
             this.#context = withGlobal(globalThis);

@@ -6,7 +6,7 @@
 function toRegExp(pattern: string): RegExp {
     const literals = pattern.split('*').map(literal => RegExp.escape(literal));
 
-    return new RegExp(`^${literals.join('.*')}$`, 'iu');
+    return new RegExp(`^${literals.join('.*')}$`, 'i');
 }
 
 /** Selects projects by the patterns of `--project` */

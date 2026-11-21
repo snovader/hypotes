@@ -59,7 +59,7 @@ async function report(
         '--test',
         `--test-isolation=${isolation}`,
         `--test-reporter=${reporterPath}`,
-        ...(namePattern === undefined ? [] : [`--test-name-pattern=${namePattern}`]),
+        ...(namePattern ? [`--test-name-pattern=${namePattern}`] : []),
         ...files
     ];
     const stdout = await new Promise<string>(resolve => {
@@ -69,17 +69,17 @@ async function report(
         });
     });
 
-    return stdout.replaceAll(/\d+ms/gu, '0ms');
+    return stdout.replaceAll(/\d+ms/g, '0ms');
 }
 
 /** The lines of a report that are the rows of files and their failed tests */
 function rows(text: string): string[] {
-    return text.split('\n').filter(line => /^ {1,3}[✓❯×] /u.test(line));
+    return text.split('\n').filter(line => /^ {1,3}[✓❯×] /.test(line));
 }
 
 /** The lines of a report's totals */
 function totals(text: string): string[] {
-    return text.split('\n').filter(line => /^ +(?:Test Files|Tests|Duration) {2}/u.test(line));
+    return text.split('\n').filter(line => /^ +(?:Test Files|Tests|Duration) {2}/.test(line));
 }
 
 const [plain, shared, colored, filtered, entryFile] = await Promise.all([
@@ -157,7 +157,7 @@ describe('a run of files', () => {
     });
 
     it("should leave out node:test's own totals", () => {
-        expect(plain).not.toMatch(/^ℹ (?:tests|pass|fail) /mu);
+        expect(plain).not.toMatch(/^ℹ (?:tests|pass|fail) /m);
     });
 
     it('should print the same rows and totals for files that share a process', () => {
@@ -255,8 +255,8 @@ describe('events', () => {
             const text = await print([...events, END]);
 
             const counted = ['failed', 'passed', 'skipped', 'todo'].map(label => {
-                const match = new RegExp(`Tests .*?(\\d+) ${label}`, 'u').exec(text);
-                return match === null ? 0 : Number(match[1]);
+                const match = new RegExp(`Tests .*?(\\d+) ${label}`).exec(text);
+                return match == null ? 0 : Number(match[1]);
             });
             const expected = ['fail', 'pass', 'skip', 'todo'].map(
                 outcome => outcomes.filter(each => each === outcome).length

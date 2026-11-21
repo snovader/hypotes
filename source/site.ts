@@ -71,13 +71,13 @@ export function callFrom<Options, Fn>(
     options: Options,
     fn: Fn
 ): unknown {
-    if (site === undefined) {
+    if (site == null) {
         return register(name, options, fn);
     }
 
     const key = `${site.scriptName}:${site.lineNumber}:${site.columnNumber}`;
     let caller = callers.get(key);
-    if (caller === undefined) {
+    if (caller == null) {
         caller = compileCaller(site);
         callers.set(key, caller);
     }

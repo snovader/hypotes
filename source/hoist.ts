@@ -81,7 +81,7 @@ interface Dependencies {
  * type arguments or without, as in `vi.importActual<typeof import('./a.ts')>()`
  */
 const MOCK_CALL =
-    /\bvi\s*\.\s*(?:mock|unmock|hoisted|doMock|doUnmock|importActual)\s*[(<]/u;
+    /\bvi\s*\.\s*(?:mock|unmock|hoisted|doMock|doUnmock|importActual)\s*[(<]/;
 
 /** The methods of `vi` whose calls move above the module's code */
 const HOISTED = new Set(['hoisted', 'mock', 'unmock']);
@@ -113,7 +113,7 @@ let dependencies: Dependencies | undefined;
 export function hoistModule(url: string, loaded: LoadFnOutput): LoadFnOutput {
     const { format, source } = loaded;
     if (
-        source === undefined ||
+        source == null ||
         (format !== 'module' && format !== 'module-typescript') ||
         !url.startsWith('file:') ||
         url.includes('/node_modules/')
@@ -127,7 +127,7 @@ export function hoistModule(url: string, loaded: LoadFnOutput): LoadFnOutput {
     }
 
     const hoisted = hoistMocks(splitInlineMap(text), url);
-    if (hoisted === undefined) {
+    if (hoisted == null) {
         return loaded;
     }
 
@@ -142,7 +142,7 @@ export function hoistModule(url: string, loaded: LoadFnOutput): LoadFnOutput {
 
 /** oxc-parser and magic-string, which load once a module needs them */
 function loadDependencies(): Dependencies {
-    if (dependencies === undefined) {
+    if (dependencies == null) {
         try {
             const { parseSync, Visitor } = require('oxc-parser') as typeof Oxc;
             const { MagicString, SourceMap } =
@@ -197,7 +197,7 @@ function hoistMocks(
 
     const decoded = s.generateDecodedMap({ source: url, hires: 'boundary' });
     const map =
-        incoming === undefined
+        incoming == null
             ? new SourceMap(decoded)
             : encodeChained(SourceMap, chainSourceMap(decoded, incoming));
     return `${s.toString()}\n//# sourceMappingURL=${dataUrlOf(map)}\n`;
@@ -222,7 +222,7 @@ function encodeChained(
     { sourceRoot, ...map }: ChainedSourceMap
 ): MagicStringModule.SourceMap {
     const encoded = new SourceMap(map);
-    return sourceRoot === undefined
+    return sourceRoot == null
         ? encoded
         : Object.assign(encoded, { sourceRoot });
 }
@@ -233,7 +233,7 @@ function callsOf(program: Oxc.Program, Visitor: typeof Oxc.Visitor): Call[] {
     const visitor = new Visitor({
         CallExpression(node) {
             const method = methodOf(node);
-            if (method !== undefined) {
+            if (method) {
                 calls.push({ method, node });
             }
         }
@@ -360,7 +360,7 @@ function resolvePaths(
         const [path] = node.arguments;
         if (
             !RESOLVED.has(method) ||
-            path === undefined ||
+            path == null ||
             path.type === 'SpreadElement'
         ) {
             continue;
@@ -418,7 +418,7 @@ function hoist(
     checkExportAll(loads, code, path);
 
     // After a hashbang, which comments out the rest of its line
-    let index = /^#!.*\r?\n/u.exec(code)?.[0].length ?? 0;
+    let index = /^#!.*\r?\n/.exec(code)?.[0].length ?? 0;
     for (const { statement } of hoisted) {
         const end = lineEnd(code, statement.end);
         if (end === statement.end) {
@@ -451,12 +451,12 @@ function isConverted(
         case 'ImportDeclaration':
             return (
                 statement.importKind !== 'type' &&
-                statement.phase === null &&
+                statement.phase == null &&
                 statement.source.value !== HYPOTES
             );
         case 'ExportNamedDeclaration':
             return (
-                statement.source !== null &&
+                statement.source != null &&
                 statement.exportKind !== 'type' &&
                 statement.source.value !== HYPOTES
             );
@@ -503,7 +503,7 @@ function checkExportAll(
     path: string
 ): void {
     for (const node of loads) {
-        if (node.type === 'ExportAllDeclaration' && node.exported === null) {
+        if (node.type === 'ExportAllDeclaration' && node.exported == null) {
             throw new SyntaxError(
                 `${path} exports every export of ${code.slice(node.source.start, node.source.end)} at ${path}:${locationOf(code, node.start)}, which would load before the mocks that are hoisted above the module's imports. Export its exports by name, or as a namespace, with "export * as", which load after them.`
             );
@@ -589,7 +589,7 @@ function importOf(
     }
 
     const pattern = `{ ${properties.join(', ')} }`;
-    if (namespace !== undefined) {
+    if (namespace) {
         return properties.length > 0
             ? `const ${namespace} = ${load}, ${pattern} = ${namespace};`
             : `const ${namespace} = ${load};`;

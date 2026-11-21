@@ -20,7 +20,7 @@ function stringsOf(names: readonly string[], count: number): string[] {
     return strings;
 }
 
-const NAME = fc.stringMatching(/^[a-z][a-z\d]*$/u);
+const NAME = fc.stringMatching(/^[a-z][a-z\d]*$/);
 
 describe('parseTable', () => {
     property.prop([

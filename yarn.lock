@@ -648,9 +648,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@snovader/oxc-config@npm:^0.1.0":
-  version: 0.1.0
-  resolution: "@snovader/oxc-config@npm:0.1.0"
+"@snovader/oxc-config@npm:^0.3.0":
+  version: 0.3.0
+  resolution: "@snovader/oxc-config@npm:0.3.0"
   peerDependencies:
     hypotes: ^0.1.0
     oxfmt: ^0.79.0
@@ -665,7 +665,7 @@ __metadata:
       optional: true
     oxlint-tsgolint:
       optional: true
-  checksum: 10c0/23d089ca030ff00249dd25eca2bade7ca6d687c64b5c29a6ca3b32b56422f0e30b72452d25303a76690f62e06a453ea0e953ae9c890b037b9bf7e42db0a1fe2a
+  checksum: 10c0/615a50d67378895b35aafc656a2bc44d277c4a239da8f47cabdada10c6e26712687d5df9770abb1064ba22f1c050c3b53729081a97a4c912e59c4d9b3575eafd
   languageName: node
   linkType: hard
 
@@ -934,7 +934,7 @@ __metadata:
   resolution: "hypotes@workspace:."
   dependencies:
     "@sinonjs/fake-timers": "npm:15.4.0"
-    "@snovader/oxc-config": "npm:^0.1.0"
+    "@snovader/oxc-config": "npm:^0.3.0"
     "@snovader/tsconfig": "npm:^0.1.0"
     "@types/node": "npm:^26.6.6"
     "@vitest/expect": "npm:^5.1.0"

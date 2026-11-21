@@ -195,7 +195,7 @@ function createAPI<Fn>(
         const merged = { ...options, ...ownOptions };
         // Vitest marks a test without a function as to do, where node:test
         // would pass it
-        const todo = fn === undefined ? { todo: true } : {};
+        const todo = fn == null ? { todo: true } : {};
         register(name, { ...merged, ...todo }, fn as never, site);
     };
     const build = (more: TestOptions): object =>

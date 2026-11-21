@@ -47,7 +47,7 @@ const PROJECT_COLORS = ['bgYellow', 'bgCyan', 'bgGreen', 'bgMagenta'] as const;
  * totals here replace
  */
 const TOTAL =
-    /^(?:tests|suites|pass|fail|cancelled|skipped|todo|duration_ms) [\d.]+$/u;
+    /^(?:tests|suites|pass|fail|cancelled|skipped|todo|duration_ms) [\d.]+$/;
 
 /** The mark of a failure's error, which is a block of colour where it has one */
 const FAIL = COLORS ? styleText(['bold', 'inverse', 'red'], ' FAIL ') : ' FAIL';
@@ -122,7 +122,7 @@ function failureType(error: Error): unknown {
 
 /** Whether a test's `skip` or `todo` is true, or gives a reason */
 function isSet(flag: boolean | string | undefined): boolean {
-    return flag !== undefined && flag !== false;
+    return flag != null && flag !== false;
 }
 
 function formatDuration(milliseconds: number): string {
@@ -140,7 +140,7 @@ function formatProject({ name }: Project): string {
 
     let sum = 0;
     for (let index = 0; index < name.length; index++) {
-        sum += (name.codePointAt(index) ?? 0) + index;
+        sum += name.charCodeAt(index) + index;
     }
 
     return styleText(
@@ -183,7 +183,7 @@ class FileResults {
         this.#file = file;
         this.#cwd = cwd;
         this.#label =
-            project === undefined ? path : `${formatProject(project)} ${path}`;
+            project == null ? path : `${formatProject(project)} ${path}`;
     }
 
     file(): string {
@@ -367,7 +367,7 @@ class Report {
             case 'test:diagnostic': {
                 const { file, message } = event.data;
 
-                return file === undefined && TOTAL.test(message)
+                return !file && TOTAL.test(message)
                     ? ''
                     : `${styleText('blue', `ℹ ${message}`)}\n`;
             }
@@ -392,7 +392,7 @@ class Report {
         file: string | undefined,
         record: (results: FileResults) => void
     ): string {
-        if (file === undefined) {
+        if (!file) {
             return '';
         }
 
@@ -410,7 +410,7 @@ class Report {
     /** The row of the current file, whose results go to the totals */
     #endFile(): string {
         const results = this.#current;
-        if (results === undefined) {
+        if (results == null) {
             return '';
         }
         this.#current = undefined;
@@ -439,7 +439,7 @@ class Report {
         file?: string;
         duration_ms: number;
     }): string {
-        if (file !== undefined) {
+        if (file) {
             return this.#current?.file() === file ? this.#endFile() : '';
         }
 
