@@ -769,7 +769,7 @@ Rules for mocks:
 | Rule                           | What it checks                                                                            |
 | ------------------------------ | ----------------------------------------------------------------------------------------- |
 | `hoisted-apis-on-top`          | `vi.mock()`, `vi.unmock()` and `vi.hoisted()` are top-level statements, where they hoist. |
-| `require-mock-type-parameters` | `vi.fn()` is given the type of the function that it mocks, in TypeScript.                 |
+| `require-mock-type-parameters` | `vi.fn()` without an implementation is given the type that it mocks, in TypeScript.       |
 
 ## License
 

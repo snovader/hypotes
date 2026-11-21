@@ -34,7 +34,7 @@ describe('vi.waitFor', () => {
     property.prop([fc.integer({ min: 1, max: 4 }), fc.anything()], { numRuns: 20 })(
         'should call the function until it returns, and resolve with its value',
         async (call, value) => {
-            const callback = vi.fn<() => unknown>(succeedsAt(call, value));
+            const callback = vi.fn(succeedsAt(call, value));
 
             const result: unknown = await vi.waitFor(callback, { interval: 1 });
 
@@ -94,7 +94,7 @@ describe('vi.waitFor', () => {
     });
 
     it('should reject with what a fake timer throws as the first call moves the clock', async () => {
-        const callback = vi.fn<() => string>(() => 'value');
+        const callback = vi.fn(() => 'value');
         vi.useFakeTimers();
         setTimeout(() => {
             throw new Error('timer');
@@ -116,7 +116,7 @@ describe('vi.waitUntil', () => {
         "should call the function until its value isn't falsy, and resolve with it",
         async (falsy, value) => {
             const values = [...falsy, value];
-            const callback = vi.fn<() => unknown>(() => values.shift());
+            const callback = vi.fn(() => values.shift());
 
             const result: unknown = await vi.waitUntil(callback, { interval: 1 });
 
@@ -136,7 +136,7 @@ describe('vi.waitUntil', () => {
     });
 
     it("should reject with the function's error at once, thrown or rejected", async () => {
-        const throws = vi.fn<() => string>(succeedsAt(Infinity, 'never'));
+        const throws = vi.fn(succeedsAt(Infinity, 'never'));
         const rejects = vi.fn<() => Promise<void>>().mockRejectedValue(new Error('rejected'));
 
         await expect(vi.waitUntil(throws)).rejects.toThrow('call 1');
@@ -147,7 +147,7 @@ describe('vi.waitUntil', () => {
     property.prop([fc.constantFrom(false, 0, '', null, undefined), fc.boolean()], { numRuns: 10 })(
         "should reject with its timeout's error at once, when the function's error is falsy",
         async (falsy, rejects) => {
-            const callback = vi.fn<() => Promise<never>>(() => {
+            const callback = vi.fn(() => {
                 if (rejects) {
                     // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- A falsy error is what is tested
                     return Promise.reject(falsy);
