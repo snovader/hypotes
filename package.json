@@ -44,6 +44,10 @@
     "./register": {
       "hypotes-dist": "./dist/register.js",
       "default": "./source/register.ts"
+    },
+    "./reporter": {
+      "hypotes-dist": "./dist/reporter.js",
+      "default": "./source/reporter.ts"
     }
   },
   "imports": {
@@ -67,6 +71,10 @@
       "./register": {
         "types": "./dist/register.d.ts",
         "default": "./dist/register.js"
+      },
+      "./reporter": {
+        "types": "./dist/reporter.d.ts",
+        "default": "./dist/reporter.js"
       }
     },
     "imports": {

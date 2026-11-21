@@ -25,7 +25,8 @@ export default defineConfig({
         index: join(import.meta.dirname, 'source/index.ts'),
         'fast-check': join(import.meta.dirname, 'source/fast-check.ts'),
         'oxlint/index': join(import.meta.dirname, 'source/oxlint/index.ts'),
-        register: join(import.meta.dirname, 'source/register.ts')
+        register: join(import.meta.dirname, 'source/register.ts'),
+        reporter: join(import.meta.dirname, 'source/reporter.ts')
     },
     platform: 'node',
     external: isExternal,

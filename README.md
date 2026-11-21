@@ -321,6 +321,11 @@ Lint rules for tests, as an oxlint JS plugin, which
 The preload that module mocks need, which [Mocking modules](#mocking-modules)
 describes.
 
+### `hypotes/reporter`
+
+A reporter for node:test that prints a row for each test file, with the name
+of its package, which [Reporter](#reporter) describes.
+
 ## Left out
 
 hypotes leaves out these members of Vitest's API. node:test has some of them
@@ -455,6 +460,74 @@ report starts with:
 
 Messages have colours only where Node prints them: to a terminal, or with
 `FORCE_COLOR`, but not to a file or a pipe.
+
+## Reporter
+
+node:test's `spec` reporter prints each test, but not the file or the package
+that it is in. In a repository of several packages, that makes a result hard
+to place. `hypotes/reporter` prints a row for each test file instead, with
+its project, as Vitest's default reporter does.
+
+Pass it to node:test, from the root of the repository:
+
+```bash
+node --test --test-reporter=hypotes/reporter
+```
+
+With a test file in each of two packages, `@shop/api` and `@shop/web`, it
+prints:
+
+```text
+ ✓ |@shop/api| test/price.test.js (2 tests) 1ms
+ ✓ |@shop/web| test/cart.test.js (1 test) 1ms
+
+ Test Files  2 passed (2)
+      Tests  3 passed (3)
+   Duration  138ms
+```
+
+A file's project is the nearest `package.json` above it that has a `name`.
+The file's path is from that package's directory. A file with no such
+package above it has no project, and its path is from the working directory.
+
+A file with a failure lists its failed tests. Their errors follow the files,
+each under its file and the titles of its suites:
+
+```text
+ ❯ |@shop/api| test/price.test.js (2 tests | 1 failed) 2ms
+   × price > rounds up 1ms
+ ✓ |@shop/web| test/cart.test.js (1 test) 1ms
+
+ Failed Tests 1
+
+ FAIL |@shop/api| test/price.test.js > price > rounds up
+Error [AssertionError]: expected 3 to be 2 // Object.is equality
+```
+
+A file that fails as it loads, and a suite whose hook fails, aren't tests.
+Their errors come first, under `Failed Suites`.
+
+The error is printed as node:test's reporters print it, with its stack.
+
+- **Colours.** Where Node prints colours, a project's name is on a coloured
+  background rather than between bars.
+- **Other output.** What tests write to stdout and stderr, their
+  diagnostics, and the coverage report are printed as `spec` prints them.
+  The totals take the place of node:test's own.
+- **Any node:test tests.** The reporter reads node:test's results, so it
+  reports tests declared with `node:test` too. It doesn't need
+  `hypotes/register`, and works with it.
+- **When a row appears.** node:test reports a file's results in the order
+  that the files were found. A file's row is printed once the next file's
+  results start, so the row of a slow file holds back those after it.
+- **Tests that a helper declares.** With `--test-isolation=none`, node:test
+  doesn't say which test file a test is from, only where it was declared.
+  Node 24.13.1 doesn't say it with any isolation. A test that a helper in
+  another module declares, as a rule tester does, is then reported under
+  that module, in a row of its own, which counts as a file in the totals.
+- **No `--project`.** The reporter names projects, but doesn't select them.
+  To run one package's tests, name its files, as in
+  `node --test "packages/api/**/*.test.js"`.
 
 ## Lint rules
 

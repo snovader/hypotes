@@ -24,7 +24,7 @@ export default defineConfig({
             {
                 patterns: [
                     {
-                        regex: '^#source/(index|fast-check|register|oxlint/index)$',
+                        regex: '^#source/(index|fast-check|register|reporter|oxlint/index)$',
                         message:
                             'Import an entry point by the name that the package exports it under.'
                     }
@@ -68,6 +68,16 @@ export default defineConfig({
             }
         },
         {
+            // Fixtures of other packages, for the reporter, which can't
+            // import hypotes: they declare node:test's tests, which return
+            // promises, and assert nothing
+            files: ['test/fixtures/projects/**'],
+            rules: {
+                'hypotes/expect-expect': 'off',
+                'typescript/no-floating-promises': 'off'
+            }
+        },
+        {
             // Fixtures that call vi.mock() and vi.hoisted() where
             // hypotes/register rejects them, at the positions that the tests
             // check
@@ -77,8 +87,13 @@ export default defineConfig({
             }
         },
         {
-            // oxlint reads its plugins from default exports
-            files: ['source/oxlint/index.ts'],
+            // oxlint reads its plugins from default exports, and node:test
+            // its reporters
+            files: [
+                'source/oxlint/index.ts',
+                'source/reporter.ts',
+                'test/fixtures/entry-file.ts'
+            ],
             rules: {
                 'import/no-default-export': 'off'
             }
