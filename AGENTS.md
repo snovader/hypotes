@@ -43,10 +43,6 @@ intent, not a requirement to preserve every detail.
 - Avoid chained calls with large inline function bodies. Extract substantial
   callbacks into named functions or methods so the overall operation stays easy
   to follow.
-- Write a top-level function as a declaration, and a function nested in
-  another as an arrow function, as the members that `createStubsAPI` returns.
-  A function that takes its `this` from its caller, or its type from a
-  contract such as `Tester`, stays a function expression.
 - Review adjacent multiline calls and deeply nested expressions for readability.
   Use blank lines between distinct steps and meaningful intermediate variables
   where they clarify the sequence. Preserve efficient execution when restructuring
