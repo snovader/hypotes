@@ -3,11 +3,13 @@
 Vitest's API on Node's test runner. Same tests, no Vite.
 
 Tests written with `describe`, `it`, `expect` and `vi` from hypotes run with
-`node --test`. There is no bundler, no config file and no second runner: Node
-runs the test files as they are, and node:test's reporters, watch mode and
-coverage apply to them. It runs TypeScript by
-[stripping its types](https://nodejs.org/api/typescript.html#type-stripping),
-so a test file, and what it imports, has to run on Node as it's written.
+`node --test`. There is no bundler and no config file, and node:test stays
+the runner: Node runs the test files as they are, and node:test's reporters,
+watch mode and coverage apply to them. The
+[`hypotes` command](#the-hypotes-command) is a shorter way to call it. It runs
+TypeScript by [stripping its
+types](https://nodejs.org/api/typescript.html#type-stripping), so a test file,
+and what it imports, has to run on Node as it's written.
 
 Use hypotes when you want Vitest's matchers, spies, module mocks and fake
 timers, but node:test as the runner. A test file that uses what both have
@@ -321,6 +323,11 @@ Lint rules for tests, as an oxlint JS plugin, which
 The preload that module mocks need, which [Mocking modules](#mocking-modules)
 describes.
 
+### `hypotes/cli`
+
+The module of [the `hypotes` command](#the-hypotes-command), which runs as
+it's imported. Run the command instead.
+
 ### `hypotes/reporter`
 
 A reporter for node:test that prints a row for each test file, with the name
@@ -461,6 +468,83 @@ report starts with:
 Messages have colours only where Node prints them: to a terminal, or with
 `FORCE_COLOR`, but not to a file or a pipe.
 
+## The `hypotes` command
+
+`hypotes` runs `node --test` with hypotes' preload and reporter, and passes
+its other arguments on. These two commands do the same:
+
+```bash
+npx hypotes
+```
+
+```bash
+node --import hypotes/register --test --test-reporter=hypotes/reporter
+```
+
+node:test's flags work as they do with `node --test`, as in
+`npx hypotes --watch` or `npx hypotes "**/*.spec.ts"`. With
+`--test-reporter`, node:test uses that reporter rather than
+[hypotes' own](#reporter). The command exits as Node does: with 1 if a test
+fails.
+
+### Running one project
+
+In a repository of several packages, `--project` runs the test files of one
+of them, by the `name` in its `package.json`, as Vitest's `--project` does:
+
+```bash
+npx hypotes --project @shop/web
+```
+
+```text
+ ✓ |@shop/web| test/cart.test.js (1 test) 1ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Duration  131ms
+```
+
+A file is in the project that [the reporter](#reporter) prints for it: the
+nearest `package.json` above it that has a `name`.
+
+| Command                                             | Runs the test files of                |
+| --------------------------------------------------- | ------------------------------------- |
+| `hypotes --project @shop/web`                       | `@shop/web`                           |
+| `hypotes --project @shop/web --project @shop/api`   | Both                                  |
+| `hypotes --project "@shop/*"`                       | Each project whose name starts so     |
+| `hypotes --project "!@shop/web"`                    | Each project but `@shop/web`          |
+| `hypotes --project @shop/web "**/*.spec.js"`        | `@shop/web`, among those of a pattern |
+
+node:test can't select files by their package, so with `--project` the
+command names each selected project's directory to node:test, as a pattern.
+node:test then finds the test files in it, as it does without `--project`.
+
+- **Names match in any case.** `--project "@SHOP/web"` selects
+  `@shop/web`, as it does in Vitest.
+- **Flags take their values after `=`.** Write
+  `--test-name-pattern=adds`, not `--test-name-pattern adds`: with
+  `--project`, the command takes an argument without a leading `-` for a
+  pattern of files.
+- **No project matches.** The command fails, and lists the projects that it
+  found.
+
+In two cases a directory's pattern would take in files of other projects,
+so the command finds the project's files itself and names them one by one:
+
+- with a pattern of your own, as in the last row of the table;
+- for a project with another package inside its directory that isn't
+  selected, such as the root package of a repository.
+
+That has costs:
+
+- **`--watch` watches the files that it found.** A test file added later
+  runs after a restart.
+- **A command can only be so long.** Each file is an argument to Node.
+  macOS and Linux take about a megabyte of them, and Windows 32,767
+  characters, which a few hundred files can exceed. The command then fails,
+  and says so. Select fewer files, or select the packages inside the
+  project too.
+
 ## Reporter
 
 node:test's `spec` reporter prints each test, but not the file or the package
@@ -526,8 +610,7 @@ The error is printed as node:test's reporters print it, with its stack.
   another module declares, as a rule tester does, is then reported under
   that module, in a row of its own, which counts as a file in the totals.
 - **No `--project`.** The reporter names projects, but doesn't select them.
-  To run one package's tests, name its files, as in
-  `node --test "packages/api/**/*.test.js"`.
+  [The `hypotes` command](#running-one-project) does.
 
 ## Lint rules
 

@@ -23,6 +23,7 @@ function isExternal(id: string): boolean {
 export default defineConfig({
     input: {
         index: join(import.meta.dirname, 'source/index.ts'),
+        cli: join(import.meta.dirname, 'source/cli.ts'),
         'fast-check': join(import.meta.dirname, 'source/fast-check.ts'),
         'oxlint/index': join(import.meta.dirname, 'source/oxlint/index.ts'),
         register: join(import.meta.dirname, 'source/register.ts'),

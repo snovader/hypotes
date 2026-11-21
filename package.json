@@ -28,10 +28,15 @@
   "engines": {
     "node": ">=24.13.1"
   },
+  "bin": "./source/cli.ts",
   "exports": {
     ".": {
       "hypotes-dist": "./dist/index.js",
       "default": "./source/index.ts"
+    },
+    "./cli": {
+      "hypotes-dist": "./dist/cli.js",
+      "default": "./source/cli.ts"
     },
     "./fast-check": {
       "hypotes-dist": "./dist/fast-check.js",
@@ -55,10 +60,15 @@
     "#test/*": "./test/*.ts"
   },
   "publishConfig": {
+    "bin": "./dist/cli.js",
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
+      },
+      "./cli": {
+        "types": "./dist/cli.d.ts",
+        "default": "./dist/cli.js"
       },
       "./fast-check": {
         "types": "./dist/fast-check.d.ts",

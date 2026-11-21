@@ -963,6 +963,8 @@ __metadata:
       optional: true
     oxlint:
       optional: true
+  bin:
+    hypotes: ./source/cli.ts
   languageName: unknown
   linkType: soft
 
