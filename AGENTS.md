@@ -119,18 +119,31 @@ intent, not a requirement to preserve every detail.
   itself, the coverage. Its header says which of node:test's events it
   relies on, and why not on the summary of a file. It imports nothing of the
   package's that declares tests, so it reports any node:test run.
-- The `hypotes` command, in `cli.ts`, is a launcher, not a runner: it
-  starts `node --test` with the preload and the reporter, and passes its
-  other arguments on unread, so it doesn't parse node:test's flags or keep a
-  list of them. Its one flag is Vitest's `--project`. node:test can't select
-  files by their package, so `test-files.ts` names each selected project's
-  directory to it, with node:test's default pattern, which it copies: check
-  it against Node's when Node's documentation of it changes. It lists a
-  project's files only where a directory's pattern would take in another
-  project's, since a list grows with the files, and a command can only be
-  so long. node:test takes each argument for a glob pattern, so what's
-  named to it is escaped. The command ends as Node does, and passes on
-  the signals that it gets. Don't add what node:test has a flag for.
+- The `hypotes` command, in `cli.ts`, is a launcher, not a runner: it starts
+  `node --test` with the preload and the reporter, and passes its other
+  arguments on, so it doesn't parse node:test's flags or keep a list of them. It
+  tells a flag from a file or a pattern only by the leading `-`, and passes the
+  flags, a `--`, and then the files, so that Node tells them apart the same way:
+  Node fails a flag whose value doesn't follow a `=`, where it would otherwise
+  take a pattern for the value. Its one flag is Vitest's `--project`. It has
+  three of Vitest's defaults, where node:test's surprise those who come from
+  Vitest: named no files, it names Vitest's default `include` to node:test,
+  which otherwise runs the helpers in a `test` directory, it passes
+  `--test-timeout=5000` unless it's given one, and it passes
+  `--test-force-exit`, so that what a test leaves running doesn't hold the
+  run, unless it's given `--watch`, which Node refuses with it. It doesn't
+  read Node's configuration file, so a `test-timeout`, a `test-reporter`, or
+  a `test-force-exit` there doesn't take the place of its own, which the
+  README says. The pattern is Vitest's as
+  it's written, `.tsx` and `.jsx` too, which a preload of the caller's may run,
+  and `.ts` under `--no-strip-types` too, which the README says. node:test can't
+  select files by their package, so `test-files.ts` names each selected
+  project's directory to it, with that pattern. It lists a project's files only
+  where a directory's pattern would take in another project's, since a list
+  grows with the files, and a command can only be so long. node:test takes each
+  argument for a glob pattern, so what's named to it is escaped. The command
+  ends as Node does, and passes on the signals that it gets. Don't add what
+  node:test has a flag for.
 - Where node:test makes the behavior differ from Vitest's, document the
   difference in the module that has it, as `hooks.ts` does for the order of
   after hooks and `TestOptions` does for `only`. Leave out what needs Vitest's

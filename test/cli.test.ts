@@ -12,6 +12,7 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
  * `bracket`, in a directory whose name means something in a glob pattern
  */
 const PROJECTS = fileURLToPath(new URL('fixtures/projects', import.meta.url));
+const ALPHA = fileURLToPath(new URL('fixtures/projects/alpha', import.meta.url));
 
 /** The environment of a run whose output goes to a pipe, without colours */
 function environment(): NodeJS.ProcessEnv {
@@ -47,32 +48,123 @@ function files(report: string): string[] {
 }
 
 describe('hypotes', () => {
-    it("should run a project's test files, which node:test's default pattern finds", async () => {
+    it("should run the files of Vitest's pattern when it is named none", async () => {
+        // And not `test/helper.ts`, which node:test would run
+        const { stdout, code } = await hypotes([], ALPHA);
+
+        expect(files(stdout)).toStrictEqual([
+            '|@fixture/alpha| test/mixed.spec.ts',
+            '|@fixture/alpha| test/nested/deep.spec.ts',
+            '|@fixture/alpha| test/passes.spec.ts'
+        ]);
+        expect(code).toBe(1);
+    });
+
+    it('should run only the files that it is named', async () => {
+        const { stdout, code } = await hypotes(['test/passes.spec.ts'], ALPHA);
+
+        expect(files(stdout)).toStrictEqual(['|@fixture/alpha| test/passes.spec.ts']);
+        expect(code).toBe(0);
+    });
+
+    it('should name the pattern after flags alone', async () => {
+        const { stdout } = await hypotes(['--test-name-pattern=adds'], ALPHA);
+
+        expect(files(stdout)).toStrictEqual([
+            '|@fixture/alpha| test/mixed.spec.ts',
+            '|@fixture/alpha| test/nested/deep.spec.ts',
+            '|@fixture/alpha| test/passes.spec.ts'
+        ]);
+        expect(stdout).toContain('      Tests  1 passed (1)\n');
+    });
+
+    it('should take each argument after -- for a file', async () => {
+        const { stdout, code } = await hypotes(['--test-only', '--', 'test/passes.spec.ts'], ALPHA);
+
+        expect(files(stdout)).toStrictEqual(['|@fixture/alpha| test/passes.spec.ts']);
+        expect(code).toBe(0);
+    });
+
+    it('should have Node fail a flag whose value does not follow a =', async () => {
+        // Rather than take `adds` for a pattern, and leave out the default,
+        // while Node takes it for the flag's value
+        const [alone, ofProject] = await Promise.all([
+            hypotes(['--test-name-pattern', 'adds'], ALPHA),
+            hypotes(['--project', '@fixture/alpha', '--test-name-pattern', 'adds'])
+        ]);
+
+        expect(alone.stderr).toContain('--test-name-pattern requires an argument');
+        expect(alone.stdout).toBe('');
+        expect(alone.code).toBe(9);
+        expect(ofProject.code).not.toBe(0);
+        expect(files(ofProject.stdout)).toStrictEqual([]);
+    });
+
+    it("should fail a test that outlasts Vitest's timeout of 5 seconds", async () => {
+        const { stdout, code } = await hypotes(['beta/outlasts.ts']);
+
+        expect(stdout).toContain(
+            ' FAIL |beta| outlasts.ts > outlasts the timeout\ntest timed out after 5000ms\n'
+        );
+        expect(code).toBe(1);
+    });
+
+    it('should leave the timeout to --test-timeout, of a hook too', async () => {
+        const [short, long] = await Promise.all([
+            hypotes(['--test-timeout=100', 'beta/slow.ts']),
+            hypotes(['--test-timeout=10000', 'beta/outlasts.ts'])
+        ]);
+
+        expect(short.stdout).toContain(
+            ' FAIL |beta| slow.ts > with a slow hook\ntest timed out after 100ms\n'
+        );
+        expect(short.stdout).toContain(
+            ' FAIL |beta| slow.ts > is slow\ntest timed out after 100ms\n'
+        );
+        expect(long.code).toBe(0);
+    });
+
+    it('should end a file whose test leaves a timer running', async () => {
+        // The timer writes as it runs, a second after the test has passed
+        const { stdout, code } = await hypotes(['beta/leaves.ts']);
+
+        expect(stdout).not.toContain('the timer ran');
+        expect(code).toBe(0);
+    });
+
+    it('should wait for what a test leaves running with --no-test-force-exit', async () => {
+        const { stdout, code } = await hypotes(['--no-test-force-exit', 'beta/leaves.ts']);
+
+        expect(stdout).toContain('the timer ran\n');
+        expect(code).toBe(0);
+    });
+
+    it("should run a project's test files, which Vitest's pattern finds", async () => {
         const { stdout, code } = await hypotes(['--project', '@fixture/alpha']);
 
         expect(files(stdout)).toStrictEqual([
-            '|@fixture/alpha| test/mixed.ts',
-            '|@fixture/alpha| test/nested/deep.ts',
-            '|@fixture/alpha| test/passes.ts'
+            '|@fixture/alpha| test/mixed.spec.ts',
+            '|@fixture/alpha| test/nested/deep.spec.ts',
+            '|@fixture/alpha| test/passes.spec.ts'
         ]);
         expect(code).toBe(1);
     });
 
     it("should run a project's files among those of the patterns", async () => {
-        // Which match a file of another project too, `in-bracket.ts`
+        // Which match a file of another project too, `in-bracket.spec.ts`
         const { stdout } = await hypotes(['--project=beta', '**/{broken,hook,in-*}.ts']);
 
         expect(files(stdout)).toStrictEqual([
             '|beta| broken.ts',
             '|beta| hook.ts',
-            '|beta| test/in-beta.ts'
+            '|beta| test/in-beta.spec.ts'
         ]);
     });
 
     it('should run only the files of a project that has another inside it', async () => {
         const { stdout, code } = await hypotes(['--project', 'beta']);
 
-        expect(files(stdout)).toStrictEqual(['|beta| test/in-beta.ts']);
+        expect(files(stdout)).toStrictEqual(['|beta| test/in-beta.spec.ts']);
         expect(code).toBe(0);
     });
 
@@ -80,8 +172,8 @@ describe('hypotes', () => {
         const { stdout } = await hypotes(['--project', '*', '--project', '!@fixture/alpha']);
 
         expect(files(stdout)).toStrictEqual([
-            '|bracket| test/in-bracket.ts',
-            '|beta| test/in-beta.ts'
+            '|bracket| test/in-bracket.spec.ts',
+            '|beta| test/in-beta.spec.ts'
         ]);
     });
 
@@ -91,8 +183,8 @@ describe('hypotes', () => {
             hypotes(['--project', 'bracket', '**/in-*.ts'])
         ]);
 
-        expect(files(byDefault.stdout)).toStrictEqual(['|bracket| test/in-bracket.ts']);
-        expect(files(byPattern.stdout)).toStrictEqual(['|bracket| test/in-bracket.ts']);
+        expect(files(byDefault.stdout)).toStrictEqual(['|bracket| test/in-bracket.spec.ts']);
+        expect(files(byPattern.stdout)).toStrictEqual(['|bracket| test/in-bracket.spec.ts']);
     });
 
     it('should take * in the name of a project, and leave out one after !', async () => {
@@ -123,7 +215,7 @@ describe('hypotes', () => {
             '--project',
             '@fixture/alpha',
             '--test-reporter=tap',
-            'alpha/test/passes.ts'
+            'alpha/test/passes.spec.ts'
         ]);
 
         expect(stdout).toContain('TAP version 13');
@@ -131,7 +223,11 @@ describe('hypotes', () => {
     });
 
     it('should exit with 0 when the tests pass', async () => {
-        const { code } = await hypotes(['--project', '@fixture/alpha', 'alpha/test/passes.ts']);
+        const { code } = await hypotes([
+            '--project',
+            '@fixture/alpha',
+            'alpha/test/passes.spec.ts'
+        ]);
 
         expect(code).toBe(0);
     });
@@ -175,7 +271,7 @@ describe('hypotes', () => {
         async () => {
             const child = spawn(
                 process.execPath,
-                [CLI, '--project', '@fixture/alpha', '--watch', 'alpha/test/passes.ts'],
+                [CLI, '--project', '@fixture/alpha', '--watch', 'alpha/test/passes.spec.ts'],
                 { cwd: PROJECTS, env: environment() }
             );
             // The report of the first run, after which Node watches

@@ -10,9 +10,9 @@ import { fc, it } from 'hypotes/fast-check';
 import reporter from 'hypotes/reporter';
 
 const PROJECTS = fileURLToPath(new URL('fixtures/projects', import.meta.url));
-const MIXED = join(PROJECTS, 'alpha', 'test', 'mixed.ts');
-const DEEP = join(PROJECTS, 'alpha', 'test', 'nested', 'deep.ts');
-const PASSES = join(PROJECTS, 'alpha', 'test', 'passes.ts');
+const MIXED = join(PROJECTS, 'alpha', 'test', 'mixed.spec.ts');
+const DEEP = join(PROJECTS, 'alpha', 'test', 'nested', 'deep.spec.ts');
+const PASSES = join(PROJECTS, 'alpha', 'test', 'passes.spec.ts');
 const BROKEN = join(PROJECTS, 'beta', 'broken.ts');
 const HOOK = join(PROJECTS, 'beta', 'hook.ts');
 const THROUGH = join(PROJECTS, 'beta', 'through.ts');
@@ -100,10 +100,10 @@ const NAMES_TEST_FILE = entryFile === 'true';
 describe('a run of files', () => {
     it('should print a row for each file, with its project and its counts', () => {
         expect(rows(plain)).toStrictEqual([
-            ' ❯ |@fixture/alpha| test/mixed.ts (5 tests | 1 failed | 1 skipped | 2 todo) 0ms',
+            ' ❯ |@fixture/alpha| test/mixed.spec.ts (5 tests | 1 failed | 1 skipped | 2 todo) 0ms',
             '   × outer > inner > fails 0ms',
-            ' ✓ |@fixture/alpha| test/nested/deep.ts (1 test) 0ms',
-            ' ✓ |@fixture/alpha| test/passes.ts (3 tests) 0ms',
+            ' ✓ |@fixture/alpha| test/nested/deep.spec.ts (1 test) 0ms',
+            ' ✓ |@fixture/alpha| test/passes.spec.ts (3 tests) 0ms',
             ' ❯ |beta| broken.ts (0 tests) 0ms',
             ' ❯ |beta| hook.ts (1 test) 0ms',
             '   × suite 0ms',
@@ -133,7 +133,7 @@ describe('a run of files', () => {
         expect(plain).toContain(' Failed Tests 1\n');
         expect(plain.indexOf(' Failed Suites ')).toBeLessThan(plain.indexOf(' Failed Tests '));
         expect(plain).toContain(
-            ' FAIL |@fixture/alpha| test/mixed.ts > outer > inner > fails\n' +
+            ' FAIL |@fixture/alpha| test/mixed.spec.ts > outer > inner > fails\n' +
                 'AssertionError [ERR_ASSERTION]: one is not two\n'
         );
         expect(plain).toContain(' FAIL |beta| hook.ts > suite\nError: the hook failed\n');
@@ -146,8 +146,8 @@ describe('a run of files', () => {
 
     it('should not count a file none of whose tests ran as a test', () => {
         expect(rows(filtered)).toStrictEqual([
-            ' ✓ |@fixture/alpha| test/nested/deep.ts (0 tests) 0ms',
-            ' ✓ |@fixture/alpha| test/passes.ts (1 test) 0ms'
+            ' ✓ |@fixture/alpha| test/nested/deep.spec.ts (0 tests) 0ms',
+            ' ✓ |@fixture/alpha| test/passes.spec.ts (1 test) 0ms'
         ]);
     });
 
@@ -162,9 +162,9 @@ describe('a run of files', () => {
 
     it('should print the same rows and totals for files that share a process', () => {
         expect(rows(shared)).toStrictEqual([
-            ' ❯ |@fixture/alpha| test/mixed.ts (5 tests | 1 failed | 1 skipped | 2 todo) 0ms',
+            ' ❯ |@fixture/alpha| test/mixed.spec.ts (5 tests | 1 failed | 1 skipped | 2 todo) 0ms',
             '   × outer > inner > fails 0ms',
-            ' ✓ |@fixture/alpha| test/passes.ts (3 tests) 0ms'
+            ' ✓ |@fixture/alpha| test/passes.spec.ts (3 tests) 0ms'
         ]);
         expect(totals(shared)).toStrictEqual([
             ' Test Files  1 failed | 1 passed (2)',

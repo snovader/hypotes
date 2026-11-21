@@ -3,7 +3,7 @@
 // a file is in.
 //
 // So a selected project is named by a pattern of its directory, which
-// node:test's default pattern follows: node:test then finds the files, new
+// the pattern of test files follows: node:test then finds the files, new
 // ones under `--watch` too, and the arguments don't grow with them. That
 // holds while every package inside the directory is selected as well.
 // Otherwise the pattern would take in the files of a package that isn't,
@@ -37,15 +37,12 @@ function escapeGlob(path: string): string {
 }
 
 /**
- * The pattern of the files that node:test runs when it's given none, which
- * its documentation lists. It takes TypeScript's extensions unless Node is
- * told not to strip types.
+ * The pattern of the files that the command runs when it's given none:
+ * Vitest's default `include`, as it's written there. It has the extensions
+ * that Node doesn't run by itself, such as `.tsx`, which a preload of the
+ * caller's may.
  */
-export function defaultPattern(stripsTypes: boolean): string {
-    const extensions = stripsTypes ? 'js,mjs,cjs,ts,mts,cts' : 'js,mjs,cjs';
-
-    return `**/{test,test/**/*,test-*,*[._-]test}.{${extensions}}`;
-}
+export const DEFAULT_PATTERN = '**/*.{test,spec}.?(c|m)[jt]s?(x)';
 
 /** A project as `--project` selects it under a working directory */
 interface Scope {
