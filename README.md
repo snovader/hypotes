@@ -543,6 +543,23 @@ A `--test-timeout` of your own takes its place, as in
   leaves a timer or a server running keeps its file's process alive after it
   has failed. Under `node --test` too, the file then never ends.
 
+### Node's configuration file
+
+Node reads a `node.config.json` when it's given `--config-file`, which the
+command passes on, as in `npx hypotes --config-file`. Before Node 26.12, the
+flag is `--experimental-config-file`. Node's
+[documentation](https://nodejs.org/api/cli.html) has what the file takes.
+
+The file's settings reach node:test as they do under `node --test`, but for
+two, which the command passes flags of its own for:
+
+- **`test-timeout`.** The command's 5 seconds take its place, since a flag
+  overrides the file. Pass `--test-timeout` to the command instead.
+- **`test-reporter`.** Node adds the file's reporter to the command's, and
+  fails: it then wants a `--test-reporter-destination` for each. Leave the
+  reporter out of the file, and pass `--test-reporter` to the command
+  instead.
+
 ### Running one project
 
 In a repository of several packages, `--project` runs the test files of one
