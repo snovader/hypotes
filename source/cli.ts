@@ -22,7 +22,11 @@
 //
 // It tells patterns from flags by the leading `-`: a flag's value has to
 // follow a `=`, as in `--test-name-pattern=adds`, or it's taken for a
-// pattern.
+// pattern. Node gets the flags first, then a `--`, then the patterns, so
+// that it reads them the same way: it fails a flag that is left without
+// its value, rather than take a pattern for it. Without the `--`, Node
+// would take `adds` for the flag's value while the command took it for a
+// pattern, and left out the default.
 import { spawn, type ChildProcess } from 'node:child_process';
 import process from 'node:process';
 import { ProjectFilter } from './project-filter.ts';
@@ -33,7 +37,7 @@ const USAGE = `Usage: hypotes [--project <name>]... [node's flags] [files or pat
 Runs tests with node --test, with the preload hypotes/register and the
 reporter hypotes/reporter. Other flags are node's, such as --watch,
 --test-name-pattern=<pattern> and --test-reporter=<reporter>. A flag's value
-follows a =, or it's taken for a pattern of files.
+follows a =, or it's taken for a pattern of files, and node fails the flag.
 
 Without files or patterns, it runs the files that match
 ${DEFAULT_PATTERN}
@@ -50,6 +54,9 @@ const INVALID_ARGUMENT = 9;
 
 /** Vitest's default `testTimeout`, in milliseconds */
 const DEFAULT_TIMEOUT = 5000;
+
+/** The argument after which Node takes each one for a file, not a flag */
+const SEPARATOR = '--';
 
 /** The signals that end a process, which the launcher passes on to Node */
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
@@ -117,23 +124,37 @@ function hasFlag(args: readonly string[], flag: string): boolean {
     );
 }
 
-/** The arguments, with the default pattern if they name no files */
-function withDefaultPattern(rest: readonly string[]): readonly string[] {
-    return rest.some(isPattern) ? rest : [...rest, DEFAULT_PATTERN];
+interface Separated {
+    /** Node's flags, in order */
+    readonly flags: readonly string[];
+    /** The files and patterns of files, in order */
+    readonly patterns: readonly string[];
 }
 
 /**
- * Node's flags among the arguments, and what names the test files of the
- * selected projects in place of the patterns
+ * Node's flags among the arguments, apart from what names files: the
+ * arguments without a leading `-`, and each one after a `--`, as in Node
+ */
+function separate(rest: readonly string[]): Separated {
+    const end = rest.indexOf(SEPARATOR);
+    const before = end === -1 ? rest : rest.slice(0, end);
+    const after = end === -1 ? [] : rest.slice(end + 1);
+
+    return {
+        flags: before.filter(argument => !isPattern(argument)),
+        patterns: [...before.filter(isPattern), ...after]
+    };
+}
+
+/**
+ * What names the test files of the selected projects, in place of the
+ * patterns
  */
 function selectFiles(
     projects: readonly string[],
-    rest: readonly string[],
+    patterns: readonly string[],
     cwd: string
-): string[] {
-    const flags = rest.filter(argument => !isPattern(argument));
-    const patterns = rest.filter(isPattern);
-
+): readonly string[] {
     const testFiles = new TestFiles(cwd, new ProjectFilter(projects));
     const named =
         patterns.length === 0
@@ -151,27 +172,43 @@ function selectFiles(
         );
     }
 
-    return [...flags, ...named];
+    return named;
 }
 
-/** The arguments that Node runs the tests with */
+/** The files and patterns that Node runs: the default pattern, if none is named */
+function filesToRun(
+    projects: readonly string[],
+    patterns: readonly string[],
+    cwd: string
+): readonly string[] {
+    if (projects.length > 0) {
+        return selectFiles(projects, patterns, cwd);
+    }
+
+    return patterns.length === 0 ? [DEFAULT_PATTERN] : patterns;
+}
+
+/**
+ * The arguments that Node runs the tests with: the flags, then the files
+ * after a `--`, as the header says
+ */
 function nodeArguments({ projects, rest }: Arguments, cwd: string): string[] {
-    const passed =
-        projects.length === 0
-            ? withDefaultPattern(rest)
-            : selectFiles(projects, rest, cwd);
+    const { flags, patterns } = separate(rest);
+    const files = filesToRun(projects, patterns, cwd);
 
     return [
         '--import',
         import.meta.resolve('hypotes/register'),
         '--test',
-        ...(hasFlag(rest, '--test-reporter')
+        ...(hasFlag(flags, '--test-reporter')
             ? []
             : [`--test-reporter=${import.meta.resolve('hypotes/reporter')}`]),
-        ...(hasFlag(rest, '--test-timeout')
+        ...(hasFlag(flags, '--test-timeout')
             ? []
             : [`--test-timeout=${DEFAULT_TIMEOUT}`]),
-        ...passed
+        ...flags,
+        SEPARATOR,
+        ...files
     ];
 }
 

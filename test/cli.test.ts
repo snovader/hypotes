@@ -78,6 +78,28 @@ describe('hypotes', () => {
         expect(stdout).toContain('      Tests  1 passed (1)\n');
     });
 
+    it('should take each argument after -- for a file', async () => {
+        const { stdout, code } = await hypotes(['--test-only', '--', 'test/passes.spec.ts'], ALPHA);
+
+        expect(files(stdout)).toStrictEqual(['|@fixture/alpha| test/passes.spec.ts']);
+        expect(code).toBe(0);
+    });
+
+    it('should have Node fail a flag whose value does not follow a =', async () => {
+        // Rather than take `adds` for a pattern, and leave out the default,
+        // while Node takes it for the flag's value
+        const [alone, ofProject] = await Promise.all([
+            hypotes(['--test-name-pattern', 'adds'], ALPHA),
+            hypotes(['--project', '@fixture/alpha', '--test-name-pattern', 'adds'])
+        ]);
+
+        expect(alone.stderr).toContain('--test-name-pattern requires an argument');
+        expect(alone.stdout).toBe('');
+        expect(alone.code).toBe(9);
+        expect(ofProject.code).not.toBe(0);
+        expect(files(ofProject.stdout)).toStrictEqual([]);
+    });
+
     it("should fail a test that outlasts Vitest's timeout of 5 seconds", async () => {
         const { stdout, code } = await hypotes(['beta/outlasts.ts']);
 

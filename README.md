@@ -491,7 +491,10 @@ rather than [hypotes' own](#reporter). The command exits as Node does: with
 
 A flag takes its value after `=`. Write `--test-name-pattern=adds`, not
 `--test-name-pattern adds`: the command takes an argument without a leading
-`-` for a file or a pattern of files.
+`-` for a file or a pattern of files. Node then fails, as the flag has no
+value, with `--test-name-pattern requires an argument`.
+
+After a `--`, each argument is a file or a pattern, as in Node.
 
 ### Test files
 
@@ -520,6 +523,9 @@ A file or a pattern takes the place of the default, so
 - **`.jsx` and `.tsx`.** The pattern has them, as Vitest's does, but Node
   doesn't run them by itself. They need a preload of your own that does,
   passed with `--import`.
+- **`--no-strip-types`.** The pattern has `.ts`, `.mts` and `.cts` then
+  too, which Node can't run without stripping types, so those files fail.
+  Name a pattern of your own, such as `"**/*.test.js"`.
 - **No test files.** If nothing matches, node:test runs no tests and the
   command exits with 0. Vitest fails.
 
