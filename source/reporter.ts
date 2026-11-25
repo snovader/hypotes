@@ -22,11 +22,23 @@
 // goes under the module that declared it. Node 24.13.1 doesn't set it at
 // all, so there such a test goes under that module in a process of its own
 // too.
+//
+// In a job of GitHub Actions, the failures follow the totals once more, each
+// as a workflow command, and the run's summary goes to the job's, as
+// `github-actions.ts` says. A failure is at the innermost frame of its
+// error's stack in the project's own code, as Vitest's is, or else where its
+// test was declared, which is where a file that failed to load starts.
 import { relative, resolve, sep } from 'node:path';
 import process from 'node:process';
 import { spec, type TestEvent } from 'node:test/reporters';
-import { inspect, styleText } from 'node:util';
+import { inspect, stripVTControlCharacters, styleText } from 'node:util';
+import {
+    formatErrorCommand,
+    GitHubActions,
+    type Annotation
+} from './github-actions.ts';
 import { Projects, type Project } from './project.ts';
+import { parseStack, type Position } from './stack.ts';
 
 type TestStart = Extract<TestEvent, { type: 'test:start' }>;
 type TestPass = Extract<TestEvent, { type: 'test:pass' }>;
@@ -113,6 +125,10 @@ interface Failure {
     readonly titles: readonly string[];
     readonly duration: number;
     readonly error: string;
+    /** What it failed with: what a test threw, or node:test's reason */
+    readonly cause: unknown;
+    /** Where it was declared */
+    readonly declared: Position;
 }
 
 /** Why node:test failed a test, which its error says, as `subtestsFailed` */
@@ -149,22 +165,33 @@ function formatProject({ name }: Project): string {
     );
 }
 
-/**
- * What a test failed with, as node:test's reporters print it: node:test
- * wraps what the test threw in an error of its own, as its cause
- */
-function formatError(error: Error): string {
-    const cause = error.cause ?? error;
-
+/** What a test failed with, as node:test's reporters print it */
+function formatError(cause: unknown): string {
     return typeof cause === 'string'
         ? cause
         : inspect(cause, { colors: COLORS });
+}
+
+/** The stack of what a test threw, if it has one, as an error does */
+function stackOf(cause: unknown): string | undefined {
+    const stack = (cause as { stack?: unknown } | null)?.stack;
+
+    return typeof stack === 'string' ? stack : undefined;
+}
+
+/** The path of a file from a directory, with `/` on each platform */
+function pathFrom(directory: string, file: string): string {
+    return relative(directory, file).replaceAll(sep, '/');
 }
 
 /** The results of a test file's tests, which its row prints */
 class FileResults {
     readonly #file: string;
     readonly #cwd: string;
+    /** The directory that the file and its errors' frames are named from */
+    readonly #directory: string;
+    readonly #project: Project | undefined;
+    readonly #path: string;
     readonly #label: string;
     readonly #counts = new Counts();
     readonly #failures: Failure[] = [];
@@ -175,13 +202,14 @@ class FileResults {
 
     /** Of the file at the absolute path, which is named from `cwd` */
     constructor(file: string, project: Project | undefined, cwd: string) {
-        const path = relative(project?.directory ?? cwd, file).replaceAll(
-            sep,
-            '/'
-        );
+        const directory = project?.directory ?? cwd;
+        const path = pathFrom(directory, file);
 
         this.#file = file;
         this.#cwd = cwd;
+        this.#directory = directory;
+        this.#project = project;
+        this.#path = path;
         this.#label =
             project == null ? path : `${formatProject(project)} ${path}`;
     }
@@ -235,6 +263,9 @@ class FileResults {
 
     #addFailure({ data }: TestFail, titles: string[], isTest: boolean): void {
         const { error, duration_ms: duration } = data.details;
+        // node:test wraps what the test threw in an error of its own, as
+        // its cause
+        const cause = error.cause ?? error;
 
         // A suite fails with its tests, whose own failures say why, and a
         // test to do may fail
@@ -250,7 +281,13 @@ class FileResults {
             titles,
             isTest,
             duration,
-            error: formatError(error)
+            error: formatError(cause),
+            cause,
+            declared: {
+                file: data.file ?? this.#file,
+                line: data.line ?? 1,
+                column: data.column ?? 1
+            }
         });
     }
 
@@ -289,6 +326,40 @@ class FileResults {
 
                 return `${FAIL} ${title}\n${error}\n`;
             });
+    }
+
+    /** Each of the file's failures, as GitHub Actions annotates it */
+    annotations(): Annotation[] {
+        return this.#failures.map(failure => this.#annotate(failure));
+    }
+
+    /**
+     * A failure under the title that Vitest's reporter gives it, as
+     * `[project] file > suite > test`, with its error's name and message,
+     * and the frames of its stack in the project's own code, as Vitest
+     * prints an error. It's at the innermost of those, or where it was
+     * declared.
+     */
+    #annotate({ titles, error, cause, declared }: Failure): Annotation {
+        const name = [this.#path, ...titles].join(' > ');
+        const title =
+            this.#project == null ? name : `[${this.#project.name}] ${name}`;
+
+        const stack = stackOf(cause);
+        if (stack == null) {
+            const message = stripVTControlCharacters(error);
+
+            return { ...declared, title, message };
+        }
+
+        const { head, frames } = parseStack(stack);
+        const lines = frames.map(
+            ({ file, line, column }) =>
+                ` ❯ ${pathFrom(this.#directory, file)}:${line}:${column}`
+        );
+        const message = [head, ...lines].join('\n');
+
+        return { ...(frames[0] ?? declared), title, message };
     }
 }
 
@@ -339,12 +410,19 @@ class Report {
     /** Of the suites and the files that failed, which aren't failed tests */
     #suiteErrors: string[] = [];
     #testErrors: string[] = [];
+    /** The workflow commands of the failures, in a job of GitHub Actions */
+    #commands: string[] = [];
     /** The file whose tests are being reported */
     #current: FileResults | undefined;
+    readonly #github: GitHubActions | undefined;
 
-    /** Names the files that have no project from `cwd` */
-    constructor(cwd: string) {
+    /**
+     * Names the files that have no project from `cwd`, and reports to the
+     * job of GitHub Actions that the run is in, if any
+     */
+    constructor(cwd: string, github: GitHubActions | undefined) {
         this.#cwd = cwd;
+        this.#github = github;
     }
 
     /** What to print for the event, which is nothing for most */
@@ -423,6 +501,11 @@ class Report {
         }
         this.#suiteErrors.push(...results.formatErrors(false));
         this.#testErrors.push(...results.formatErrors(true));
+        if (this.#github != null) {
+            for (const annotation of results.annotations()) {
+                this.#commands.push(formatErrorCommand(annotation));
+            }
+        }
 
         return results.formatRow();
     }
@@ -451,13 +534,19 @@ class Report {
             formatTotal('Test Files', this.#files.format()) +
             formatTotal('Tests', this.#tests.format()) +
             formatTotal('Duration', formatDuration(duration));
+        // Each after an empty line, as Vitest prints them
+        const commands = this.#commands
+            .map(command => `\n${command}\n`)
+            .join('');
+        const warning = this.#github?.summarize(this.#files, this.#tests) ?? '';
 
         this.#suiteErrors = [];
         this.#testErrors = [];
+        this.#commands = [];
         this.#files = new Counts();
         this.#tests = new Counts();
 
-        return `${row}${errors}\n${totals}\n`;
+        return `${row}${errors}\n${totals}\n${commands}${warning}`;
     }
 }
 
@@ -475,12 +564,14 @@ function formatCoverage(
  * The reporter, as `--test-reporter=hypotes/reporter` loads it, and as the
  * stream of node:test's `run()` composes it. Besides the files' rows, the
  * errors and the totals, it prints what tests write to stdout and stderr,
- * their diagnostics, and the coverage as node:test's `spec` does.
+ * their diagnostics, and the coverage as node:test's `spec` does. In a job
+ * of GitHub Actions, it prints a workflow command for each failure too, and
+ * appends the run's summary to the job's.
  */
 export default async function* reporter(
     source: AsyncIterable<TestEvent>
 ): AsyncGenerator<string, void> {
-    const report = new Report(process.cwd());
+    const report = new Report(process.cwd(), GitHubActions.from(process.env));
 
     for await (const event of source) {
         const text = report.print(event);

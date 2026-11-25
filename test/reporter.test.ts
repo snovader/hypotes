@@ -1,11 +1,13 @@
 import { execFile } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, parse, relative, sep } from 'node:path';
 import process from 'node:process';
 import { Readable } from 'node:stream';
 import type { TestEvent } from 'node:test/reporters';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
-import { describe, expect } from 'hypotes';
+import { afterAll, afterEach, beforeEach, describe, expect, vi } from 'hypotes';
 import { fc, it } from 'hypotes/fast-check';
 import reporter from 'hypotes/reporter';
 
@@ -17,6 +19,17 @@ const BROKEN = join(PROJECTS, 'beta', 'broken.ts');
 const HOOK = join(PROJECTS, 'beta', 'hook.ts');
 const THROUGH = join(PROJECTS, 'beta', 'through.ts');
 const ENTRY_FILE = fileURLToPath(new URL('fixtures/entry-file.ts', import.meta.url));
+/** A module of this package's, which mocks a module, and one of whose tests fails */
+const MOCKS = fileURLToPath(new URL('fixtures/mocks.ts', import.meta.url));
+
+/** A directory for the summaries that the runs append to */
+const SUMMARIES = mkdtempSync(join(tmpdir(), 'hypotes-reporter-'));
+const SUMMARY = join(SUMMARIES, 'summary.md');
+const UNUSED_SUMMARY = join(SUMMARIES, 'unused.md');
+
+afterAll(() => {
+    rmSync(SUMMARIES, { recursive: true, force: true });
+});
 
 /** The start of the escape sequences that colour text in a terminal */
 const ESCAPE = '\u001B[';
@@ -30,6 +43,16 @@ interface RunOptions {
     readonly namePattern?: string;
     /** The reporter's path or URL, which is `hypotes/reporter` unless given */
     readonly reporter?: string;
+    /** A module to preload, as `hypotes/register` */
+    readonly preload?: string;
+    /**
+     * The variables that GitHub Actions sets, which the run has none of
+     * unless given, whether or not these tests run there
+     */
+    readonly github?: {
+        readonly GITHUB_ACTIONS?: string;
+        readonly GITHUB_STEP_SUMMARY?: string;
+    };
 }
 
 /**
@@ -42,10 +65,12 @@ async function report(
         colors = false,
         isolation = 'process',
         namePattern,
-        reporter: reporterPath = import.meta.resolve('hypotes/reporter')
+        reporter: reporterPath = import.meta.resolve('hypotes/reporter'),
+        preload,
+        github
     }: RunOptions = {}
 ): Promise<string> {
-    const env = { ...process.env };
+    const env: NodeJS.ProcessEnv = { ...process.env, ...github };
     // Which tells node:test that it runs in a test file's process
     delete env.NODE_TEST_CONTEXT;
     delete env.FORCE_COLOR;
@@ -54,8 +79,15 @@ async function report(
     if (colors) {
         env.FORCE_COLOR = '1';
     }
+    if (github?.GITHUB_ACTIONS == null) {
+        delete env.GITHUB_ACTIONS;
+    }
+    if (github?.GITHUB_STEP_SUMMARY == null) {
+        delete env.GITHUB_STEP_SUMMARY;
+    }
 
     const args = [
+        ...(preload ? [`--import=${preload}`] : []),
         '--test',
         `--test-isolation=${isolation}`,
         `--test-reporter=${reporterPath}`,
@@ -82,13 +114,25 @@ function totals(text: string): string[] {
     return text.split('\n').filter(line => /^ +(?:Test Files|Tests|Duration) {2}/.test(line));
 }
 
-const [plain, shared, colored, filtered, entryFile] = await Promise.all([
-    report([MIXED, DEEP, PASSES, BROKEN, HOOK, THROUGH]),
-    report([MIXED, PASSES], { isolation: 'none' }),
-    report([MIXED, PASSES], { colors: true }),
-    report([DEEP, PASSES], { namePattern: 'adds' }),
-    report([PASSES], { reporter: pathToFileURL(ENTRY_FILE).href })
-]);
+const [plain, shared, colored, filtered, entryFile, annotated, annotatedMocks, notInActions] =
+    await Promise.all([
+        report([MIXED, DEEP, PASSES, BROKEN, HOOK, THROUGH]),
+        report([MIXED, PASSES], { isolation: 'none' }),
+        report([MIXED, PASSES], { colors: true }),
+        report([DEEP, PASSES], { namePattern: 'adds' }),
+        report([PASSES], { reporter: pathToFileURL(ENTRY_FILE).href }),
+        report([MIXED, PASSES, BROKEN, HOOK], {
+            colors: true,
+            github: { GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: SUMMARY }
+        }),
+        report([MOCKS], {
+            preload: import.meta.resolve('hypotes/register'),
+            github: { GITHUB_ACTIONS: 'true' }
+        }),
+        report([MIXED], {
+            github: { GITHUB_ACTIONS: 'false', GITHUB_STEP_SUMMARY: UNUSED_SUMMARY }
+        })
+    ]);
 
 /**
  * Whether this Node says which test file a test is from, as `entryFile`.
@@ -184,6 +228,96 @@ describe('a run of files', () => {
     });
 });
 
+/** The line of a file that has the text, from 1 */
+function lineOf(text: string, file: string): number {
+    const lines = readFileSync(file, 'utf8').split('\n');
+
+    return lines.findIndex(line => line.includes(text)) + 1;
+}
+
+/** A property's value in a workflow command, as GitHub's toolkit escapes it */
+function property(value: string): string {
+    return value.replaceAll('%', '%25').replaceAll(':', '%3A').replaceAll(',', '%2C');
+}
+
+/** The lines of a report that are workflow commands */
+function commands(text: string): string[] {
+    return text.split('\n').filter(line => line.startsWith('::'));
+}
+
+describe('a run in GitHub Actions', () => {
+    it('should print the command of an error for each failure, where it failed', () => {
+        const failed = lineOf('assert.equal(actual, expected', MIXED);
+        const thrown = lineOf("throw new Error('the hook failed')", HOOK);
+
+        expect(commands(annotated)).toStrictEqual([
+            `::error file=${property(MIXED)},` +
+                'title=[@fixture/alpha] test/mixed.spec.ts > outer > inner > fails,' +
+                `line=${failed},col=20::AssertionError [ERR_ASSERTION]: one is not two` +
+                `%0A%0A1 !== 2%0A ❯ test/mixed.spec.ts:${failed}:20`,
+            // A file that fails as it loads has no error but node:test's
+            // reason, and is where it starts
+            `::error file=${property(BROKEN)},title=[beta] broken.ts,line=1,col=1::test failed`,
+            `::error file=${property(HOOK)},title=[beta] hook.ts > suite,` +
+                `line=${thrown},col=15::Error: the hook failed%0A ❯ hook.ts:${thrown}:15`
+        ]);
+    });
+
+    it('should print the commands after the totals, each after an empty line', () => {
+        const lines = annotated.split('\n');
+        const duration = lines.findIndex(line => line.includes('Duration'));
+
+        expect(lines.slice(duration + 1).map(line => line.slice(0, 7))).toStrictEqual([
+            '',
+            '',
+            '::error',
+            '',
+            '::error',
+            '',
+            '::error',
+            ''
+        ]);
+    });
+
+    it('should print the commands without colours, where Node prints colours', () => {
+        expect(annotated).toContain(ESCAPE);
+        expect(commands(annotated).join('\n')).not.toContain(ESCAPE);
+    });
+
+    it('should place a failure in a module that hypotes/register transformed where it is written', () => {
+        const line = lineOf("expect(value()).toBe('original')", MOCKS);
+
+        expect(commands(annotatedMocks)).toHaveLength(1);
+        expect(commands(annotatedMocks)[0]).toContain(
+            `::error file=${property(MOCKS)},` +
+                'title=[hypotes] test/fixtures/mocks.ts > a failure in a module that mocks points at its line,' +
+                `line=${line},col=21::AssertionError: expected 'mocked' to be 'original'`
+        );
+        expect(commands(annotatedMocks)[0]).toContain(`%0A ❯ test/fixtures/mocks.ts:${line}:21`);
+    });
+
+    it("should append the run's summary to the job's", () => {
+        expect(readFileSync(SUMMARY, 'utf8')).toBe(
+            [
+                '## hypotes Test Report',
+                '',
+                '### Summary',
+                '',
+                '- **Test Files**: ❌ **3 failures** · ✅ **1 pass** · 4 total',
+                '- **Test Results**: ❌ **1 failure** · ✅ **5 passes** · 6 total',
+                '- **Other**: 1 skip · 2 todos · 3 total',
+                ''
+            ].join('\n')
+        );
+    });
+
+    it('should print no commands and write no summary outside GitHub Actions', () => {
+        expect(commands(plain)).toStrictEqual([]);
+        expect(commands(notInActions)).toStrictEqual([]);
+        expect(() => readFileSync(UNUSED_SUMMARY)).toThrow('ENOENT');
+    });
+});
+
 /** A file that no package is above, which has no project */
 const LONE = join(parse(process.cwd()).root, 'hypotes-no-package', 'lone.test.ts');
 
@@ -208,6 +342,33 @@ function result(file: string, name: string, outcome: Outcome): TestEvent {
     } as unknown as TestEvent;
 }
 
+/**
+ * The event of a test in the file that failed with the error, as node:test
+ * reports what a test threw
+ */
+function failure(file: string, name: string, cause: unknown): TestEvent {
+    const error = Object.assign(new Error('wrapped', { cause }), {
+        failureType: 'testCodeFailure'
+    });
+
+    return {
+        type: 'test:fail',
+        data: {
+            file,
+            name,
+            nesting: 0,
+            line: 3,
+            column: 5,
+            details: { duration_ms: 1, type: 'test', error }
+        }
+    } as unknown as TestEvent;
+}
+
+/** An error with the stack, as one that another process threw has it */
+function errorWithStack(stack: string): Error {
+    return Object.assign(new Error('failed'), { stack });
+}
+
 /** The event that ends a run */
 const END = { type: 'test:summary', data: { duration_ms: 5 } } as unknown as TestEvent;
 
@@ -223,6 +384,16 @@ async function print(events: readonly TestEvent[]): Promise<string> {
 }
 
 describe('events', () => {
+    // Which these tests' own process has, where they run in GitHub Actions
+    beforeEach(() => {
+        vi.stubEnv('GITHUB_ACTIONS', undefined);
+        vi.stubEnv('GITHUB_STEP_SUMMARY', undefined);
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
     it('should name a file without a project by its path from the working directory', async () => {
         const path = relative(process.cwd(), LONE).replaceAll(sep, '/');
         const text = await print([result(LONE, 'passes', 'pass'), END]);
@@ -266,4 +437,94 @@ describe('events', () => {
             expect(text).toContain(`(${outcomes.length})\n`);
         }
     );
+});
+
+describe('events in GitHub Actions', () => {
+    /** A file whose path has what a command's property escapes */
+    const ODD = join(parse(process.cwd()).root, 'hypotes-no-package', 'a,b 100%', 'odd.test.ts');
+    const ODD_PATH = relative(process.cwd(), ODD).replaceAll(sep, '/');
+
+    beforeEach(() => {
+        vi.stubEnv('GITHUB_ACTIONS', 'true');
+        vi.stubEnv('GITHUB_STEP_SUMMARY', undefined);
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
+    it("should escape a message's percent signs and line ends, and a property's colons and commas too", async () => {
+        const error = errorWithStack(
+            `Error: 100% of a, b: c\r\nand d\n    at ${pathToFileURL(ODD).href}:7:9`
+        );
+        const text = await print([failure(ODD, 'adds 1, 2: 3', error), END]);
+
+        expect(commands(text)).toStrictEqual([
+            `::error file=${property(ODD)},` +
+                `title=${property(ODD_PATH)} > adds 1%2C 2%3A 3,line=7,col=9::` +
+                `Error: 100%25 of a, b: c%0D%0Aand d%0A ❯ ${ODD_PATH.replaceAll('%', '%25')}:7:9`
+        ]);
+    });
+
+    it('should name a Windows path as a stack does, with its colon escaped', async () => {
+        const error = errorWithStack(
+            'Error: failed\n    at fn (C:\\work\\a,b\\win.test.ts:4:2)\n    at node:internal/x:1:1'
+        );
+        const text = await print([failure(LONE, 'fails', error), END]);
+
+        expect(commands(text)).toHaveLength(1);
+        expect(commands(text)[0]).toContain('::error file=C%3A\\work\\a%2Cb\\win.test.ts,');
+        expect(commands(text)[0]).toContain(',line=4,col=2::Error: failed%0A');
+    });
+
+    it.each([
+        ['outside the project', '    at fn (file:///work/node_modules/pkg/index.js:1:1)'],
+        ["in Node's internals", '    at Test.run (node:internal/test_runner/test:1402:25)'],
+        ['at all', '']
+    ])(
+        'should place a failure whose stack has no frame %s where its test was declared',
+        async (_, frame) => {
+            const error = errorWithStack(`Error: failed\n${frame}`);
+            const text = await print([failure(LONE, 'fails', error), END]);
+
+            expect(commands(text)).toStrictEqual([
+                `::error file=${property(LONE)},` +
+                    `title=${property(relative(process.cwd(), LONE).replaceAll(sep, '/'))} > fails,` +
+                    'line=3,col=5::Error: failed'
+            ]);
+        }
+    );
+
+    it('should print what a test threw that is no error', async () => {
+        const text = await print([failure(LONE, 'fails', { reason: 'a\nb' }), END]);
+
+        expect(commands(text)).toHaveLength(1);
+        expect(commands(text)[0]).toMatch(/,line=3,col=5::\{ reason: 'a\\nb' \}$/);
+    });
+
+    it('should print no command for a test that passed, was skipped, or is to do', async () => {
+        const text = await print([
+            result(LONE, 'passes', 'pass'),
+            result(LONE, 'is skipped', 'skip'),
+            result(LONE, 'is to do', 'todo'),
+            END
+        ]);
+
+        expect(commands(text)).toStrictEqual([]);
+    });
+
+    it('should start the commands over for the next run, as under --watch', async () => {
+        const run = [result(LONE, 'fails', 'fail'), END];
+
+        expect(commands(await print([...run, ...run]))).toHaveLength(2);
+    });
+
+    it("should say that it couldn't write the summary, and not fail", async () => {
+        // A directory, which can't be appended to
+        vi.stubEnv('GITHUB_STEP_SUMMARY', SUMMARIES);
+        const text = await print([result(LONE, 'passes', 'pass'), END]);
+
+        expect(text).toContain(`Could not write the job summary to ${SUMMARIES}: `);
+        expect(totals(text)).toHaveLength(3);
+    });
 });
