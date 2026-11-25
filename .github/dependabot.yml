@@ -30,7 +30,8 @@ updates:
         patterns:
           - "@snovader/*"
       # @vitest/expect requires its own version of @vitest/spy and
-      # @vitest/utils, which the runner imports too, and a range of
+      # @vitest/utils, which the runner imports too, as @vitest/mocker
+      # requires its own of @vitest/spy, and a range of
       # tinyrainbow: expect.ts turns off the colours of the copy that
       # @vitest/expect loads, so the package's tinyrainbow and theirs have to
       # resolve to one copy

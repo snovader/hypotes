@@ -13,12 +13,14 @@ import {
     type MaybePartiallyMocked,
     type MaybePartiallyMockedDeep
 } from '@vitest/spy';
+import { mockObject } from './automock.ts';
 import { chained } from './chain.ts';
 import {
     doMock,
     doUnmock,
     hoisted,
     importActual,
+    importMock,
     mock,
     unmock
 } from './mocks.ts';
@@ -91,8 +93,10 @@ const mocks = {
     fn,
     hoisted,
     importActual,
+    importMock,
     isMockFunction,
     mock,
+    mockObject,
     mocked,
     spyOn,
     unmock

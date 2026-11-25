@@ -81,7 +81,7 @@ interface Dependencies {
  * type arguments or without, as in `vi.importActual<typeof import('./a.ts')>()`
  */
 const MOCK_CALL =
-    /\bvi\s*\.\s*(?:mock|unmock|hoisted|doMock|doUnmock|importActual)\s*[(<]/;
+    /\bvi\s*\.\s*(?:mock|unmock|hoisted|doMock|doUnmock|importActual|importMock)\s*[(<]/;
 
 /** The methods of `vi` whose calls move above the module's code */
 const HOISTED = new Set(['hoisted', 'mock', 'unmock']);
@@ -90,6 +90,7 @@ const RESOLVED = new Set([
     'doMock',
     'doUnmock',
     'importActual',
+    'importMock',
     'mock',
     'unmock'
 ]);

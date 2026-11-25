@@ -9,8 +9,9 @@ intent, not a requirement to preserve every detail.
 - Give each function, class, and module a clear scope of responsibility.
   For example, `tests.ts` declares tests and suites, `hooks.ts` maps hooks onto
   node:test's, `expect.ts` assembles the matchers, `site.ts` records where
-  each test was declared, `mocks.ts` mocks modules, `hoist.ts` hoists the
-  mocks of a test file, `timers.ts` fakes timers, `stubs.ts` stubs
+  each test was declared, `mocks.ts` mocks modules, `automock.ts` mocks
+  objects and modules' exports by itself, `hoist.ts` hoists the mocks of a
+  test file, `timers.ts` fakes timers, `stubs.ts` stubs
   globals, `wait.ts` waits for a function to succeed, `project.ts` finds the
   package that a test file belongs to, `reporter.ts` prints node:test's
   results by file, `project-filter.ts` selects projects by `--project`'s
@@ -124,15 +125,21 @@ intent, not a requirement to preserve every detail.
   `vi.mock`, as Vitest's transform does, in `hoist.ts`, whose header says
   where it differs: imports become constants, and the factories of mocks run
   before the module's imports and dynamic imports, rather than as the mocked
-  module loads. It leaves out automocking and `__mocks__` directories, which
-  need a factory instead.
+  module loads. A mock without a factory imports the original there too,
+  and `automock.ts` mocks its exports with `@vitest/mocker`'s automocker, as
+  Vitest's runner does, which also makes `vi.mockObject` and
+  `vi.importMock`. `mocks.ts`' header says how an import of an original
+  waits for the mocks that it comes to. It leaves out `__mocks__`
+  directories: Vitest looks for the mocks of packages in its
+  configuration's `root`, which hypotes doesn't have, so they need a factory
+  instead.
 - The transform moves a module's code, so it writes a source map, and
   `callerSite()` reads the position that it maps to. Its stack traces and
   the sites of its tests point where the code is written.
-- Reuse Vitest's own packages, `@vitest/expect`, `@vitest/spy`, and
-  `@vitest/utils`, rather than reimplementing their matchers, spies, or
-  formatting. Their versions move together, which Dependabot's `vitest` group
-  keeps.
+- Reuse Vitest's own packages, `@vitest/expect`, `@vitest/spy`,
+  `@vitest/mocker`, and `@vitest/utils`, rather than reimplementing their
+  matchers, spies, automocker, or formatting. Their versions move together,
+  which Dependabot's `vitest` group keeps.
 - `hypotes/reporter` is a reporter for node:test, not a runner: it prints
   the events that node:test reports, a row for each file, with its project,
   in the format of Vitest's default reporter. It counts tests as node:test
@@ -322,6 +329,7 @@ intent, not a requirement to preserve every detail.
   turns off the colours of the copy of tinyrainbow that they load, and
   `timers.ts` loads `@sinonjs/fake-timers` once a test fakes the timers or
   the date, so that a test file that doesn't fake them doesn't load it.
+  `automock.ts` loads `@vitest/mocker` once a test automocks, likewise.
   fast-check, oxlint,
   oxc-parser, and magic-string are optional peer dependencies, for the entry
   points that need them: `hypotes/fast-check` imports fast-check,
