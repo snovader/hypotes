@@ -13,6 +13,13 @@
 // them as the mocked module loads. A factory's error surfaces where its
 // module is imported, as Vitest's does.
 //
+// An import of an original, by `importOriginal`, can come to another mock
+// whose exports haven't settled, whatever the order of their calls: it waits
+// for them, and imports again. Node loads a module that failed to load
+// afresh, and nothing ran, since a module's imports load before any of them
+// runs. A mock that's imported as its factory makes its exports fails to
+// import.
+//
 // A mock can stand in for a package that isn't installed, or for an import
 // that its package doesn't define, as Vitest's can. `import.meta.resolve`
 // gives their specifiers no URL, so the URL of such a mock's original is
@@ -80,31 +87,64 @@ const DRIVE = /^[a-z]:/i;
  */
 const running = new AsyncLocalStorage<ReadonlySet<ModuleMock>>();
 
-/** Imports the original of a mocked module */
-function importOriginal<T>(url: string): Promise<T> {
-    return import(ACTUAL + url) as Promise<T>;
+/**
+ * The error of an import of a mocked module whose exports haven't settled,
+ * which an import of an original waits for, and imports again
+ */
+class UnsettledMock extends Error {
+    /** Resolves once the mock's exports settle */
+    readonly settling: Promise<void>;
+
+    constructor(message: string, settling: Promise<void>) {
+        super(message);
+        this.settling = settling;
+    }
 }
 
-/** A mock of a module, whose factory runs once */
+/**
+ * Imports the original of a mocked module, once the mocks that it imports
+ * settle. A module that failed to load loads again, but one that failed to
+ * run, as CommonJS that `require()`s a mock can, fails again with the same
+ * error: that's thrown.
+ */
+async function importOriginal<T>(url: string): Promise<T> {
+    const waited = new Set<Promise<void>>();
+    for (;;) {
+        try {
+            return (await import(ACTUAL + url)) as T;
+        } catch (error) {
+            if (
+                !(error instanceof UnsettledMock) ||
+                waited.has(error.settling)
+            ) {
+                throw error;
+            }
+            waited.add(error.settling);
+            await error.settling;
+        }
+    }
+}
+
+/** A mock of a module, whose factory makes its exports once */
 class ModuleMock {
     /** The URL that the module resolves to while it's mocked */
     readonly url: string;
     readonly #original: string;
-    readonly #factory: MockFactoryWithHelper;
+    readonly #make: () => unknown;
     #ran = false;
     /** Resolves once the exports of a factory that returned a promise settle */
     #settling: Promise<void> | undefined;
     #outcome: Outcome | undefined;
 
-    constructor(id: number, original: string, factory: MockFactoryWithHelper) {
+    constructor(id: number, original: string, make: () => unknown) {
         this.url = `${MOCK}${id}:${original}`;
         this.#original = original;
-        this.#factory = factory;
+        this.#make = make;
     }
 
     /**
-     * Runs the factory, unless it ran, and resolves once its exports have
-     * settled, but for the factory's own code, which they wait for
+     * Makes the exports, unless it has, and resolves once they have settled,
+     * but for the code that makes them, which they wait for
      */
     run(): Promise<void> | undefined {
         const around = running.getStore();
@@ -115,9 +155,7 @@ class ModuleMock {
         this.#ran = true;
         let exports: unknown;
         try {
-            exports = running.run(new Set(around).add(this), () =>
-                this.#factory(() => importOriginal(this.#original))
-            );
+            exports = running.run(new Set(around).add(this), this.#make);
         } catch (error) {
             this.#fail(error);
             return undefined;
@@ -132,21 +170,33 @@ class ModuleMock {
         return undefined;
     }
 
-    /** The factory's exports, for the mocked module, which loads now */
+    /**
+     * The mock's exports, for the mocked module, which loads now. It throws
+     * an `UnsettledMock` if they haven't settled, or an error that says why
+     * they can't, if what makes them imports the module.
+     */
     exports(): Exports {
-        void this.run();
+        const settling = this.run();
 
         const outcome = this.#outcome;
         if (outcome == null) {
-            throw new Error(
-                `The factory of the mock of ${nameOf(this.#original)} returned a promise, which hadn't settled when the module was imported. A module that mocks modules waits for their factories before its imports, so import it from there, after the mock, or from a module that it imports. Mocks settle in the order of their calls, so mock a module that a factory imports before the mock of that factory.`
-            );
+            throw settling == null
+                ? new Error(this.#cycle())
+                : new UnsettledMock(this.#unsettled(), settling);
         }
         if ('error' in outcome) {
             throw outcome.error;
         }
 
         return outcome.exports;
+    }
+
+    #unsettled(): string {
+        return `The mock of ${nameOf(this.#original)} hadn't settled when the module was imported: its factory returned a promise. A module that mocks modules waits for its mocks before its imports and dynamic imports, so import it from there, after the mock, or from a module that it imports.`;
+    }
+
+    #cycle(): string {
+        return `The mock of ${nameOf(this.#original)} was imported as its factory made its exports: by the factory, or by a module that the original imports. Leave the module out of what the factory imports.`;
     }
 
     async #await(exports: PromiseLike<unknown>): Promise<void> {
@@ -216,7 +266,8 @@ export class ModuleMocks {
 
     /** Mocks the module at the URL, from the imports after this */
     mock(url: string, factory: MockFactoryWithHelper): void {
-        const mock = new ModuleMock(this.#byId.length, url, factory);
+        const make = (): unknown => factory(() => importOriginal(url));
+        const mock = new ModuleMock(this.#byId.length, url, make);
         this.#byId.push(mock);
         this.#mocks.set(url, mock);
     }
@@ -227,10 +278,10 @@ export class ModuleMocks {
     }
 
     /**
-     * Runs the factories of the mocks that haven't run, and resolves once
-     * the exports of every factory have settled. A factory that this waits
-     * for can import through `wrapDynamicImport`, which doesn't wait for it,
-     * and runs the factories after it.
+     * Makes the exports of the mocks that haven't, and resolves once the
+     * exports of every mock have settled. A factory that this waits for can
+     * import through `wrapDynamicImport`, which doesn't wait for it, and runs
+     * the factories after it.
      */
     async settle(): Promise<void> {
         for (const mock of this.#mocks.values()) {

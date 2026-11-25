@@ -140,6 +140,7 @@ describe('vi.mock', () => {
 describe('vi.doMock', () => {
     afterEach(() => {
         vi.doUnmock('./fixtures/later.ts');
+        vi.doUnmock('./fixtures/uses-later.ts');
     });
 
     it('should mock the module for the dynamic imports after it, until disposed', async () => {
@@ -204,6 +205,16 @@ describe('vi.doMock', () => {
         const { value } = await import('./fixtures/later.ts');
 
         expect(value()).toBe('kept');
+    });
+
+    it('should wait in importOriginal for a mock that the original imports, whatever the order of the calls', async () => {
+        vi.doMock(import('./fixtures/uses-later.ts'), async importOriginal => ({
+            ...(await importOriginal())
+        }));
+        vi.doMock(import('./fixtures/later.ts'), () => Promise.resolve({ value: () => 'awaited' }));
+        const { describeLater } = await import('./fixtures/uses-later.ts');
+
+        expect(describeLater()).toBe('later: awaited');
     });
 
     property.prop([unresolved])(
