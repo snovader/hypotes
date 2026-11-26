@@ -266,14 +266,21 @@ it, apart from the differences below.
 ### `hypotes`
 
 - `describe` and `suite`, and `it` and `test`, with `.skip`, `.only`,
-  `.todo`, `.skipIf()`, `.runIf()`, `.each()` and `.for()`.
-- Options for a test or a suite: `timeout`, `skip`, `todo`, `only`, and
-  node:test's `concurrency`. They come before the function, as in
+  `.todo`, `.skipIf()`, `.runIf()`, `.each()` and `.for()`. `it` and `test`
+  have `.fails` too, which passes a test that fails.
+- Options for a test or a suite: `timeout`, `skip`, `todo`, `only`, `fails`,
+  and node:test's `concurrency`. They come before the function, as in
   `it('name', { timeout: 100 }, fn)`. A timeout alone can follow it, as in
-  `it('name', fn, 100)`.
+  `it('name', fn, 100)`. A suite's `fails` applies to its tests.
 - `beforeAll`, `afterAll`, `beforeEach` and `afterEach`.
+- `onTestFinished` and `onTestFailed`, which a test or its hooks call to run
+  a callback once the test ends.
 - `expect`, with Vitest's matchers and asymmetric matchers,
-  `expect.extend()`, `expect.addEqualityTesters()` and `expect.fail()`.
+  `expect.extend()`, `expect.addEqualityTesters()` and `expect.fail()`, and
+  the members that need the test that is running: `expect.soft()`,
+  `expect.poll()`, `expect.assertions()` and `expect.hasAssertions()`.
+- A test's context, which is node:test's, with Vitest's `expect`,
+  `onTestFinished` and `onTestFailed` added.
 - `vi`, with these members:
   - For spies: `fn`, `spyOn`, `mocked`, `isMockFunction`, `clearAllMocks`,
     `resetAllMocks` and `restoreAllMocks`.
@@ -344,11 +351,10 @@ in another form. Of `vi`, hypotes has only the members that
 | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `it.concurrent`, `describe.concurrent`                                            | The `concurrency` option, as in `describe('name', { concurrency: true }, fn)` |
 | `it.sequential`, `describe.sequential`                                            | None: a file's tests run one at a time, unless `concurrency` says otherwise   |
-| `it.fails`, `it.extend`, `describe.shuffle`                                       | None                                                                          |
+| `it.extend`, `describe.shuffle`                                                   | None                                                                          |
 | The `retry`, `repeats` and `tags` options                                         | None                                                                          |
-| `onTestFinished`                                                                  | `t.after()`, on node:test's context                                           |
-| `onTestFailed`, `aroundEach`, `aroundAll`, `inject`                               | None                                                                          |
-| `expect.soft`, `expect.poll`, `expect.assertions`, `expect.hasAssertions`         | None                                                                          |
+| `aroundEach`, `aroundAll`, `inject`                                               | None                                                                          |
+| The context's `task` and `annotate`                                               | node:test's context, with `t.name`, `t.fullName` and `t.diagnostic()`         |
 | `expect.unreachable`                                                              | `expect.fail()`                                                               |
 | `toMatchSnapshot` and the other snapshot matchers, `expect.addSnapshotSerializer` | node:test's `t.assert.snapshot()`                                             |
 | `expectTypeOf`, `assertType`                                                      | The `expect-type` package, which Vitest's `expectTypeOf` comes from           |
@@ -361,7 +367,12 @@ in another form. Of `vi`, hypotes has only the members that
 ### Tests and hooks
 
 - **Context.** A test's function gets node:test's context, with `t.mock` and
-  `t.assert`. Vitest's has `expect` and `task`.
+  `t.assert`, and Vitest's `expect`, `onTestFinished` and `onTestFailed`.
+  Its `expect` is the one that hypotes exports. Vitest gives each test an
+  `expect` of its own.
+- **`skip()` on the context.** It's node:test's, which takes a message, and
+  marks the test as skipped. The function goes on after it. Vitest's takes a
+  condition too, and ends the test.
 - **`.only`.** Under `node --test`, `.only` does nothing unless `--test-only`
   is passed too. It does apply when a file is run by itself, as
   `node file.test.ts`.
@@ -378,6 +389,35 @@ in another form. Of `vi`, hypotes has only the members that
   it's given one. Vitest fails a test after 5 seconds, and a hook after 10.
   Node's `--test-timeout` sets one for every test and hook, and
   [the `hypotes` command](#timeout) passes Vitest's 5 seconds.
+
+### The end of a test
+
+hypotes does at the end of each test what Vitest's runner does: it checks
+`expect.assertions()`, fails the test with the errors of its soft
+assertions, and runs the callbacks of `onTestFinished` and `onTestFailed`.
+They run after the `afterEach` hooks, the last added first, as in Vitest.
+node:test runs the test, so these differ:
+
+- **One error for each test.** node:test reports one error for a failed
+  test. A test with more than one, such as two failed soft assertions, fails
+  with an `AggregateError`. Its message lists the message of each, in the
+  order that Vitest reports them.
+- **Errors after a failure.** Once a test has failed, node:test drops what
+  its after hooks throw. So an error of an `onTestFinished` callback, or of a
+  `.resolves` that wasn't awaited, isn't reported besides the test's own.
+  Vitest reports each.
+- **What `fails` counts.** A test that `fails` passes if its function, a
+  soft assertion, or its count of assertions failed it. Vitest passes it too
+  when an `afterEach` hook or an `onTestFinished` callback throws, or when it
+  times out. hypotes fails it then.
+- **Tests that run at once.** `expect.assertions()` counts the assertions of
+  the test that calls it, and `expect.soft()` collects its errors, while
+  other tests run at once too. Vitest's `expect` counts those of every test
+  that runs at once, and its `expect.soft()` throws after an `await`, unless
+  a test uses the `expect` of its context.
+- **Timeouts of callbacks.** An `onTestFinished` or `onTestFailed` callback
+  has a timeout only if it's given one, as its second argument. Vitest gives
+  each 10 seconds.
 
 ### Equality
 
@@ -712,7 +752,7 @@ The error is printed as node:test's reporters print it, with its stack.
 vitest rules see only what a file imports from `vitest`, so these take their
 place. They see the tests and suites declared through `hypotes`,
 `hypotes/fast-check` and `node:test`, the assertions of hypotes' `expect`,
-and hypotes' `vi`.
+`expect.soft()` and `expect.poll()`, and hypotes' `vi`.
 
 Load them in `.oxlintrc.json`, with the rules that you want:
 
@@ -754,15 +794,15 @@ Rules for how tests are declared:
 
 Rules for assertions:
 
-| Rule                       | What it checks                                                                            |
-| -------------------------- | ----------------------------------------------------------------------------------------- |
-| `expect-expect`            | Each test calls `expect()`, or a function whose name starts with `expect`.                |
-| `no-standalone-expect`     | `expect()` runs in a test or in a function, not in a suite or at the top of a module.     |
-| `valid-expect`             | A matcher is called on `expect()`, and `.resolves` or `.rejects` is awaited or returned.  |
-| `valid-expect-in-promise`  | A promise whose callback calls `expect()`, as in `.then()`, is awaited or returned.       |
-| `require-to-throw-message` | `toThrow()` and `toThrowError()` say what the error should be, unless they follow `.not`. |
-| `prefer-to-be`             | `toBe()` for a primitive, and `toBeNull()` and its like, rather than `toEqual()`. Fix.    |
-| `prefer-to-have-length`    | `expect(values).toHaveLength(n)`, rather than comparing `values.length` with `n`. Fix.    |
+| Rule                       | What it checks                                                                                            |
+| -------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `expect-expect`            | Each test calls `expect()`, its `soft()` or `poll()`, or a function whose name starts with `expect`.      |
+| `no-standalone-expect`     | `expect()` runs in a test or in a function, not in a suite or at the top of a module.                     |
+| `valid-expect`             | A matcher is called on `expect()`, and `expect.poll()`, `.resolves` or `.rejects` is awaited or returned. |
+| `valid-expect-in-promise`  | A promise whose callback calls `expect()`, as in `.then()`, is awaited or returned.                       |
+| `require-to-throw-message` | `toThrow()` and `toThrowError()` say what the error should be, unless they follow `.not`.                 |
+| `prefer-to-be`             | `toBe()` for a primitive, and `toBeNull()` and its like, rather than `toEqual()`. Fix.                    |
+| `prefer-to-have-length`    | `expect(values).toHaveLength(n)`, rather than comparing `values.length` with `n`. Fix.                    |
 
 Rules for mocks:
 

@@ -6,16 +6,18 @@ intent, not a requirement to preserve every detail.
 
 ## Responsibilities and architecture
 
-- Give each function, class, and module a clear scope of responsibility.
-  For example, `tests.ts` declares tests and suites, `hooks.ts` maps hooks onto
-  node:test's, `expect.ts` assembles the matchers, `site.ts` records where
-  each test was declared, `mocks.ts` mocks modules, `hoist.ts` hoists the
-  mocks of a test file, `timers.ts` fakes timers, `stubs.ts` stubs
-  globals, `wait.ts` waits for a function to succeed, `project.ts` finds the
-  package that a test file belongs to, `reporter.ts` prints node:test's
-  results by file, `project-filter.ts` selects projects by `--project`'s
-  patterns, `test-files.ts` finds the test files of the selected projects,
-  and `cli.ts` launches Node with them.
+- Give each function, class, and module a clear scope of responsibility. For
+  example, `tests.ts` declares tests and suites, `hooks.ts` maps hooks onto
+  node:test's, `current-test.ts` keeps the test that is running, `test-run.ts`
+  runs a test as Vitest's runner does, `test-hooks.ts` has the callbacks of a
+  test's end, `expect.ts` assembles the matchers, `poll.ts` polls a matcher,
+  `site.ts` records where each test was declared, `mocks.ts` mocks modules,
+  `hoist.ts` hoists the mocks of a test file, `timers.ts` fakes timers,
+  `stubs.ts` stubs globals, `wait.ts` waits for a function to succeed,
+  `project.ts` finds the package that a test file belongs to, `reporter.ts`
+  prints node:test's results by file, `project-filter.ts` selects projects by
+  `--project`'s patterns, `test-files.ts` finds the test files of the selected
+  projects, and `cli.ts` launches Node with them.
 - Search for existing implementations and related abstractions before adding
   code. Always consider reusability and where behavior belongs. Keep a helper
   local when its responsibility is local; share it when it has a coherent role
@@ -112,10 +114,10 @@ intent, not a requirement to preserve every detail.
   `package.json` pins the version that Vitest bundles, and a pull request
   that moves Vitest's packages moves it too, after comparing Vitest's patch
   of it with what the header of `timers.ts` says that it makes up for.
-  `stubs.ts` has Vitest's stubs of globals and environment variables, and
-  `wait.ts` its `vi.waitFor` and `vi.waitUntil`, on the real timers that
-  `@vitest/utils` keeps. The members of `vi` that Vitest's return `vi` from
-  do so here, through `chain.ts`.
+  `stubs.ts` has Vitest's stubs of globals and environment variables,
+  `wait.ts` its `vi.waitFor` and `vi.waitUntil`, and `poll.ts` its
+  `expect.poll`, on the real timers that `@vitest/utils` keeps. The members
+  of `vi` that Vitest's return `vi` from do so here, through `chain.ts`.
 - Module mocks are the exception: node:test's `mock.module` needs a flag that
   NODE_OPTIONS can't pass, and can't keep a module's original exports. So
   `vi.mock` and the members of `vi` that go with it mock modules through
@@ -129,6 +131,18 @@ intent, not a requirement to preserve every detail.
 - The transform moves a module's code, so it writes a source map, and
   `callerSite()` reads the position that it maps to. Its stack traces and
   the sites of its tests point where the code is written.
+- What Vitest's runner drives needs only the test that is running, which
+  `current-test.ts` keeps, in an AsyncLocalStorage, so that tests that run at
+  once each have theirs. `registerTest` runs each test's function through
+  `test-run.ts`, and `hooks.ts` runs each test's hooks, with the test as the
+  current one. `test-run.ts` does around the function what Vitest's runner
+  does: it checks `expect.assertions()`, fails the test with the errors of
+  its soft assertions, judges `fails`, which node:test hasn't, and runs the
+  callbacks of `onTestFinished` and `onTestFailed` in an `after` hook of the
+  test, which node:test runs after its `afterEach` hooks. `expect.soft` and
+  the checks that a `.resolves` is awaited are `@vitest/expect`'s, which
+  read and write the fields of Vitest's test that `ExpectTask` names. Build
+  what else needs the running test, such as snapshots, on `currentTest()`.
 - Reuse Vitest's own packages, `@vitest/expect`, `@vitest/spy`, and
   `@vitest/utils`, rather than reimplementing their matchers, spies, or
   formatting. Their versions move together, which Dependabot's `vitest` group
@@ -168,8 +182,8 @@ intent, not a requirement to preserve every detail.
 - Where node:test makes the behavior differ from Vitest's, document the
   difference in the module that has it, as `hooks.ts` does for the order of
   after hooks and `TestOptions` does for `only`. Leave out what needs Vitest's
-  runner, such as `expect.soft` and `expect.assertions`, rather than
-  approximating it, and say that it's left out.
+  runner beyond the test that is running, such as `it.extend` and the
+  `retry` option, rather than approximating it, and say that it's left out.
 - Keep the position of each test's declaration in the test file, where
   reporters print it. A function that a test file calls to declare a test
   calls `callerSite()` directly, and passes the site on, as `.each`, `.for`,
