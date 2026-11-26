@@ -340,7 +340,8 @@ it's imported. Run the command instead.
 ### `hypotes/reporter`
 
 A reporter for node:test that prints a row for each test file, with the name
-of its package, which [Reporter](#reporter) describes.
+of its package, which [Reporter](#reporter) describes. In GitHub Actions, it
+[annotates the failures](#in-github-actions) too.
 
 ## Left out
 
@@ -749,6 +750,65 @@ The error is printed as node:test's reporters print it, with its stack.
   that module, in a row of its own, which counts as a file in the totals.
 - **No `--project`.** The reporter names projects, but doesn't select them.
   [The `hypotes` command](#running-one-project) does.
+
+### In GitHub Actions
+
+In a job of GitHub Actions, the reporter reports each failure to GitHub too,
+as Vitest's
+[`github-actions` reporter](https://vitest.dev/guide/reporters#github-actions-reporter)
+does. It needs no setup: GitHub sets `GITHUB_ACTIONS` to `true`, which turns
+it on. After the totals, it prints a
+[workflow command](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-an-error-message)
+for each failure:
+
+```text
+::error file=/home/runner/work/shop/shop/api/test/price.test.js,title=[@shop/api] test/price.test.js > price > rounds up,line=9,col=32::AssertionError: expected 3 to be 2 // Object.is equality%0A%0A+ actual - expected%0A%0A+ 3%0A- 2%0A ❯ test/price.test.js:9:32
+```
+
+GitHub shows the failure as an annotation on that line of the pull request's
+diff. The line is the first in the error's stack that is in the project's
+own code, outside `node_modules`. It must also be inside `GITHUB_WORKSPACE`,
+since GitHub can't place a file outside it on the diff. An error without
+such a line is annotated where its test was declared.
+
+Each error of an `AggregateError` has an annotation of its own, as in
+Vitest. A test with more than one error, such as two failed soft assertions,
+fails with one, as [The end of a test](#the-end-of-a-test) says.
+
+The reporter also appends the run's counts to the
+[job's summary](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#adding-a-job-summary),
+the file that `GITHUB_STEP_SUMMARY` names:
+
+```markdown
+## hypotes Test Report
+
+### Summary
+
+- **Test Files**: ❌ **1 failure** · ✅ **1 pass** · 2 total
+- **Test Results**: ❌ **1 failure** · ✅ **2 passes** · 3 total
+```
+
+Where it differs from Vitest's:
+
+- **The column.** The command names the column as `col`, which GitHub
+  reads. Vitest 5.1 writes `column`.
+- **Where a failure is.** Vitest 5.1 annotates the first line of the stack
+  in a file that it transformed, even outside `GITHUB_WORKSPACE`. It doesn't
+  annotate an error without such a line.
+- **A file that fails as it loads.** node:test reports only that it failed,
+  so its annotation is on the file's first line, and says `test failed`. The
+  error is in the step's log.
+- **Expected failures.** node:test reports a test that `fails` as passed
+  when it fails, so the summary counts it among the passes. Vitest's counts
+  it as an expected failure.
+- **No flaky tests.** Vitest's summary lists the tests that passed on a
+  retry. node:test retries none.
+- **No options.** node:test passes a reporter no options, so Vitest's
+  `onWritePath`, `displayAnnotations` and `jobSummary` have no counterpart.
+  The variables are the switch: run the tests with `GITHUB_ACTIONS` set to
+  nothing to turn both off, as `GITHUB_ACTIONS= npx hypotes` does in a
+  POSIX shell, or with `GITHUB_STEP_SUMMARY` set to nothing to leave out
+  only the summary.
 
 ## Lint rules
 

@@ -15,9 +15,11 @@ intent, not a requirement to preserve every detail.
   `hoist.ts` hoists the mocks of a test file, `timers.ts` fakes timers,
   `stubs.ts` stubs globals, `wait.ts` waits for a function to succeed,
   `project.ts` finds the package that a test file belongs to, `reporter.ts`
-  prints node:test's results by file, `project-filter.ts` selects projects by
-  `--project`'s patterns, `test-files.ts` finds the test files of the selected
-  projects, and `cli.ts` launches Node with them.
+  prints node:test's results by file, `stack.ts` reads the frames of an
+  error's stack that are in the project's own code, `github-actions.ts`
+  formats what a run reports to GitHub Actions, `project-filter.ts` selects
+  projects by `--project`'s patterns, `test-files.ts` finds the test files of
+  the selected projects, and `cli.ts` launches Node with them.
 - Search for existing implementations and related abstractions before adding
   code. Always consider reusability and where behavior belongs. Keep a helper
   local when its responsibility is local; share it when it has a coherent role
@@ -154,6 +156,24 @@ intent, not a requirement to preserve every detail.
   itself, the coverage. Its header says which of node:test's events it
   relies on, and why not on the summary of a file. It imports nothing of the
   package's that declares tests, so it reports any node:test run.
+- Where `GITHUB_ACTIONS` is `true`, the reporter does what Vitest's
+  `github-actions` reporter does, which Vitest adds to its default one
+  there: it prints a workflow command for each failure after the totals, and
+  appends the run's summary to the file that `GITHUB_STEP_SUMMARY` names.
+  `github-actions.ts` formats both as Vitest 5.1 does, and its header says
+  where they differ. It isn't a reporter of its own: a second
+  `--test-reporter` needs a destination for each, which the command would
+  have to pass, and it would count the files and track the titles again.
+  node:test passes a reporter no options, so the variables that GitHub sets
+  are the only switch; don't add one of hypotes' own without a need. A
+  failure's position is the innermost frame of its error's stack that the
+  runner can place on the diff, or else where its test was declared, as
+  `github-actions.ts` says. `stack.ts` reads the frames from the stack's
+  text: node:test passes the error from the test file's process, where the
+  positions are already those of the code as it's written, as `stack.ts`
+  says. The tests of the reporter and of the command run their fixtures
+  without GitHub's variables, so that CI's own job gets no annotations or
+  summary of failures that are on purpose.
 - The `hypotes` command, in `cli.ts`, is a launcher, not a runner: it starts
   `node --test` with the preload and the reporter, and passes its other
   arguments on, so it doesn't parse node:test's flags or keep a list of them. It

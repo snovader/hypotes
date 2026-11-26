@@ -3,10 +3,18 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+/** Types, which Node strips, and leaves each position below where it was */
+interface Operands {
+    readonly actual: number;
+    readonly expected: number;
+}
+
 describe('outer', () => {
     describe('inner', () => {
         it('fails', () => {
-            assert.equal(1, 2, 'one is not two');
+            const { actual, expected }: Operands = { actual: 1, expected: 2 };
+
+            assert.equal(actual, expected, 'one is not two');
         });
     });
 

@@ -20,6 +20,9 @@ function environment(): NodeJS.ProcessEnv {
     // Which tells node:test that it runs in a test file's process
     delete env.NODE_TEST_CONTEXT;
     delete env.FORCE_COLOR;
+    // With which the reporter would report the fixtures' failures to the
+    // job of GitHub Actions that these tests run in
+    delete env.GITHUB_ACTIONS;
 
     return env;
 }
