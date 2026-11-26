@@ -6,8 +6,9 @@
 // their variants, such as `it.only`, and of the functions that `it.each()`,
 // `it.for()`, `it.prop()`, `it.skipIf()` and `it.runIf()` return, and that
 // `it.each` and `it.for` return for a table in a template literal. An
-// assertion is a call of hypotes' `expect`, or, to expect-expect, of any
-// function whose name starts with `expect`, and `vi` is hypotes' `vi`.
+// assertion is a call of hypotes' `expect`, `expect.soft` or `expect.poll`,
+// or, to expect-expect, of any function whose name starts with `expect`, or
+// of its `soft` or `poll`, and `vi` is hypotes' `vi`.
 //
 // They find what oxlint's do, with these differences. TypeScript checks the
 // types of arguments, such as a title's, so the rules don't. They take no
@@ -60,7 +61,12 @@ interface Import {
 }
 
 /** Members of `it`, `test`, `describe` and `suite` that are called as they are */
-const VARIANTS: ReadonlySet<string> = new Set(['only', 'skip', 'todo']);
+const VARIANTS: ReadonlySet<string> = new Set([
+    'fails',
+    'only',
+    'skip',
+    'todo'
+]);
 
 /**
  * Members of `it`, `test`, `describe` and `suite` that return the function
@@ -86,6 +92,15 @@ const MODIFIERS: ReadonlySet<string> = new Set(['not', 'rejects', 'resolves']);
 
 /** Modifiers whose matchers return promises */
 const ASYNC_MODIFIERS: ReadonlySet<string> = new Set(['rejects', 'resolves']);
+
+/**
+ * Members of `expect` that start an assertion, as it does, such as
+ * `expect.soft(actual)`
+ */
+const EXPECT_MEMBERS: ReadonlySet<string> = new Set(['poll', 'soft']);
+
+/** Members of `expect` that start an assertion whose matchers return promises */
+const ASYNC_EXPECT_MEMBERS: ReadonlySet<string> = new Set(['poll']);
 
 /** Matchers of one value, for which others may say more */
 const EQUALITY_MATCHERS: ReadonlySet<string> = new Set([
@@ -127,9 +142,14 @@ const UNHOISTED: ReadonlyMap<string, string> = new Map([
 /** Files of TypeScript, where a call can take type arguments */
 const TYPESCRIPT = /\.[cm]?tsx?$/;
 
-/** An `expect()` call, the modifiers after it, such as `.not`, and its matcher */
+/**
+ * An `expect()` call, or `expect.soft()` or `expect.poll()`, the modifiers
+ * after it, such as `.not`, and its matcher
+ */
 interface ExpectChain {
     readonly expect: CallExpression;
+    /** `.poll`, if the chain starts with `expect.poll()` */
+    readonly poll: StaticMemberExpression | undefined;
     readonly modifiers: readonly StaticMemberExpression[];
     /** `.toBe`, if the chain names a matcher */
     readonly matcher: StaticMemberExpression | undefined;
@@ -426,11 +446,25 @@ function hasCallback(call: CallExpression): boolean {
     return call.arguments.some(isFunctionExpression);
 }
 
+/** Whether a call starts an assertion: `expect()`, or a member that does */
 function isExpectCall(context: Context, call: CallExpression): boolean {
-    return (
-        call.callee.type === 'Identifier' &&
-        roleOf(context, call.callee) === 'expect'
-    );
+    const target = isNamedMember(call.callee, EXPECT_MEMBERS)
+        ? call.callee.object
+        : call.callee;
+
+    return target.type === 'Identifier' && roleOf(context, target) === 'expect';
+}
+
+/**
+ * Whether a call's callee is named as an assertion, to expect-expect:
+ * `expectOne()`, or `expect.soft()` or `expect.poll()`
+ */
+function isNamedAssertion(callee: CallExpression['callee']): boolean {
+    const target = isNamedMember(callee, EXPECT_MEMBERS)
+        ? callee.object
+        : callee;
+
+    return target.type === 'Identifier' && target.name.startsWith('expect');
 }
 
 /** The chain that a call starts, if it calls `expect` */
@@ -457,8 +491,11 @@ function expectChainOf(
         parent?.type === 'CallExpression' && parent.callee === matcher
             ? parent
             : undefined;
+    const poll = isNamedMember(call.callee, ASYNC_EXPECT_MEMBERS)
+        ? call.callee
+        : undefined;
 
-    return { expect: call, modifiers, matcher, matcherCall };
+    return { expect: call, poll, modifiers, matcher, matcherCall };
 }
 
 /** The chain that a call starts, if it compares with toBe(), toEqual() or toStrictEqual() */
@@ -986,12 +1023,7 @@ export const expectExpect: Rule = {
 
         return {
             CallExpression(call): void {
-                const { callee } = call;
-                const isAssertion =
-                    callee.type === 'Identifier' &&
-                    callee.name.startsWith('expect');
-
-                if (isAssertion) {
+                if (isNamedAssertion(call.callee)) {
                     for (const ancestor of ancestorsOf(call)) {
                         if (ancestor.type === 'CallExpression') {
                             unasserted.delete(ancestor);
@@ -1045,7 +1077,7 @@ export const validExpect: Rule = {
         type: 'problem',
         docs: {
             description:
-                'Requires a matcher to be called on expect(), and the promise of .resolves or .rejects to be awaited or returned. TypeScript checks the arguments of expect().'
+                'Requires a matcher to be called on expect(), and the promise of expect.poll(), .resolves or .rejects to be awaited or returned. TypeScript checks the arguments of expect().'
         }
     },
     create(context) {
@@ -1062,6 +1094,15 @@ export const validExpect: Rule = {
                         node: call,
                         message:
                             'Expected a matcher, such as toBe(), to be called on expect()'
+                    });
+                } else if (
+                    chain.poll != null &&
+                    !isAwaitedOrReturned(matcherCall)
+                ) {
+                    context.report({
+                        node: matcherCall,
+                        message:
+                            'Expected the promise of expect.poll() to be awaited or returned'
                     });
                 } else if (
                     hasModifier(chain, ASYNC_MODIFIERS) &&

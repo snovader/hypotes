@@ -29,6 +29,9 @@ tester.run('expect-expect', plugin.rules['expect-expect'], {
         imported("it.for([1])('asserts %i', (value, context) => { expect(value).toBe(1); });"),
         imported("it.each`a\n${1}`('asserts $a', ({ a }) => { expect(a).toBe(1); });"),
         imported("it.skipIf(skipped).only('asserts', () => { expect(1).toBe(1); });"),
+        imported("it.fails('fails', () => { expect(1).toBe(2); });"),
+        imported("it('asserts softly', () => { expect.soft(1).toBe(1); });"),
+        imported("it('polls', async () => { await expect.poll(() => 1).toBe(1); });"),
         imported("it.todo('is to be written');"),
         imported("it('runs a function declared elsewhere', check);"),
         imported("describe('has no assertions of its own', () => {});"),
@@ -79,6 +82,16 @@ tester.run('expect-expect', plugin.rules['expect-expect'], {
             errors: [{ message: NO_ASSERTION }]
         },
         {
+            name: 'a test that is expected to fail',
+            code: imported("it.fails('asserts nothing', () => {});"),
+            errors: [{ message: NO_ASSERTION }]
+        },
+        {
+            name: 'a test that only makes an asymmetric matcher',
+            code: imported("it('asserts nothing', () => { const any = expect.any(Number); });"),
+            errors: [{ message: NO_ASSERTION }]
+        },
+        {
             name: 'a test imported under another name',
             code: "import { it as check } from 'hypotes';\ncheck('asserts nothing', () => {});",
             errors: [{ message: NO_ASSERTION }]
@@ -105,6 +118,7 @@ tester.run('no-standalone-expect', plugin.rules['no-standalone-expect'], {
         imported("it.prop([arbitrary])('asserts', value => { expect(value).toBe(value); });"),
         imported("it.each([1])('asserts %i', value => { expect(value).toBe(1); });"),
         imported("it.for`a\n${1}`('asserts $a', ({ a }) => { expect(a).toBe(1); });"),
+        imported("it.fails('fails', () => { expect.soft(1).toBe(2); });"),
         imported(
             "test('asserts in a callback', () => { [1].forEach(value => { expect(value).toBe(1); }); });"
         ),
@@ -131,6 +145,18 @@ tester.run('no-standalone-expect', plugin.rules['no-standalone-expect'], {
         {
             name: 'an assertion in a suite',
             code: imported("suite('a suite', () => { expect(1).toBe(1); });"),
+            errors: [{ message: STANDALONE }]
+        },
+        {
+            name: 'a soft assertion at the top of the module',
+            code: imported('expect.soft(1).toBe(1);'),
+            errors: [{ message: STANDALONE }]
+        },
+        {
+            name: 'a poll in a describe block',
+            code: imported(
+                "describe('a block', async () => { await expect.poll(() => 1).toBe(1); });"
+            ),
             errors: [{ message: STANDALONE }]
         },
         {
@@ -164,6 +190,7 @@ tester.run('no-standalone-expect', plugin.rules['no-standalone-expect'], {
 
 const NO_MATCHER = 'Expected a matcher, such as toBe(), to be called on expect()';
 const NOT_AWAITED = 'Expected the promise of .resolves or .rejects to be awaited or returned';
+const POLL_NOT_AWAITED = 'Expected the promise of expect.poll() to be awaited or returned';
 
 tester.run('valid-expect', plugin.rules['valid-expect'], {
     valid: [
@@ -180,7 +207,14 @@ tester.run('valid-expect', plugin.rules['valid-expect'], {
         ),
         imported(
             'const check = (): Promise<unknown> => Promise.allSettled([expect(promise).resolves.toBe(1)]);'
-        )
+        ),
+        imported('expect.soft(1).toBe(1);'),
+        imported('await expect.soft(promise).resolves.toBe(1);'),
+        imported('await expect.poll(() => value).toBe(1);'),
+        imported('await expect.poll(() => value, { timeout: 10 }).not.toBe(1);'),
+        imported('const check = (): Promise<void> => expect.poll(() => value).toBe(1);'),
+        // A member of `expect` that makes an asymmetric matcher, rather than an assertion
+        imported('const any = expect.any(Number);')
     ],
     invalid: [
         {
@@ -214,6 +248,31 @@ tester.run('valid-expect', plugin.rules['valid-expect'], {
             errors: [{ message: NOT_AWAITED }]
         },
         {
+            name: 'a soft assertion without a matcher',
+            code: imported('expect.soft(1);'),
+            errors: [{ message: NO_MATCHER }]
+        },
+        {
+            name: 'a poll without a matcher',
+            code: imported('expect.poll(() => value);'),
+            errors: [{ message: NO_MATCHER }]
+        },
+        {
+            name: 'a poll that is neither awaited nor returned',
+            code: imported('expect.poll(() => value).toBe(1);'),
+            errors: [{ message: POLL_NOT_AWAITED }]
+        },
+        {
+            name: 'a negated poll that is neither awaited nor returned',
+            code: imported('expect.poll(() => value).not.toBe(1);'),
+            errors: [{ message: POLL_NOT_AWAITED }]
+        },
+        {
+            name: 'a soft assertion of a promise that is neither awaited nor returned',
+            code: imported('expect.soft(promise).resolves.toBe(1);'),
+            errors: [{ message: NOT_AWAITED }]
+        },
+        {
             name: 'a promise in a function that returns something else',
             code: imported(
                 'async function check(): Promise<number> { expect(promise).rejects.toThrow(); return 1; }'
@@ -241,6 +300,12 @@ tester.run('prefer-to-be', plugin.rules['prefer-to-be'], {
             name: 'a number',
             code: imported('expect(value).toEqual(1);'),
             output: imported('expect(value).toBe(1);'),
+            errors: [{ message: 'Use toBe() rather than toEqual(1)' }]
+        },
+        {
+            name: 'a number, softly',
+            code: imported('expect.soft(value).toEqual(1);'),
+            output: imported('expect.soft(value).toBe(1);'),
             errors: [{ message: 'Use toBe() rather than toEqual(1)' }]
         },
         {
@@ -380,6 +445,21 @@ tester.run('no-focused-tests', plugin.rules['no-focused-tests'], {
                             output: imported(
                                 "it.each`a\n${1}`('runs alone with $a', ({ a }) => {});"
                             )
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            name: 'a test that is expected to fail',
+            code: imported("it.fails.only('runs alone', () => {});"),
+            errors: [
+                {
+                    message: FOCUSED,
+                    suggestions: [
+                        {
+                            desc: 'Remove .only',
+                            output: imported("it.fails('runs alone', () => {});")
                         }
                     ]
                 }
