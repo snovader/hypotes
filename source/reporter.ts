@@ -25,20 +25,19 @@
 //
 // In a job of GitHub Actions, the failures follow the totals once more, each
 // as a workflow command, and the run's summary goes to the job's, as
-// `github-actions.ts` says. A failure is at the innermost frame of its
-// error's stack in the project's own code, as Vitest's is, or else where its
-// test was declared, which is where a file that failed to load starts.
+// `github-actions.ts` says. A failure is at the innermost project frame in
+// the GitHub workspace, or else where its test was declared.
 import { relative, resolve, sep } from 'node:path';
 import process from 'node:process';
 import { spec, type TestEvent } from 'node:test/reporters';
-import { inspect, stripVTControlCharacters, styleText } from 'node:util';
+import { inspect, styleText } from 'node:util';
 import {
     formatErrorCommand,
     GitHubActions,
     type Annotation
 } from './github-actions.ts';
 import { Projects, type Project } from './project.ts';
-import { parseStack, type Position } from './stack.ts';
+import { parseStack, type ParsedStack, type Position } from './stack.ts';
 
 type TestStart = Extract<TestEvent, { type: 'test:start' }>;
 type TestPass = Extract<TestEvent, { type: 'test:pass' }>;
@@ -173,10 +172,15 @@ function formatError(cause: unknown): string {
 }
 
 /** The stack of what a test threw, if it has one, as an error does */
-function stackOf(cause: unknown): string | undefined {
-    const stack = (cause as { stack?: unknown } | null)?.stack;
+function stackOf(cause: unknown): ParsedStack | undefined {
+    const error = cause as { stack?: unknown; message?: unknown } | null;
+    const stack = error?.stack;
+    if (typeof stack !== 'string') {
+        return undefined;
+    }
 
-    return typeof stack === 'string' ? stack : undefined;
+    const message = error?.message;
+    return parseStack(stack, typeof message === 'string' ? message : undefined);
 }
 
 /** The path of a file from a directory, with `/` on each platform */
@@ -329,37 +333,37 @@ class FileResults {
     }
 
     /** Each of the file's failures, as GitHub Actions annotates it */
-    annotations(): Annotation[] {
-        return this.#failures.map(failure => this.#annotate(failure));
+    annotations(github: GitHubActions): Annotation[] {
+        return this.#failures.map(failure => this.#annotate(failure, github));
     }
 
     /**
      * A failure under the title that Vitest's reporter gives it, as
      * `[project] file > suite > test`, with its error's name and message,
      * and the frames of its stack in the project's own code, as Vitest
-     * prints an error. It's at the innermost of those, or where it was
-     * declared.
+     * prints an error. The job selects the frame it can annotate.
      */
-    #annotate({ titles, error, cause, declared }: Failure): Annotation {
+    #annotate(
+        { titles, error, cause, declared }: Failure,
+        github: GitHubActions
+    ): Annotation {
         const name = [this.#path, ...titles].join(' > ');
         const title =
             this.#project == null ? name : `[${this.#project.name}] ${name}`;
 
         const stack = stackOf(cause);
         if (stack == null) {
-            const message = stripVTControlCharacters(error);
-
-            return { ...declared, title, message };
+            return { ...declared, title, message: error };
         }
 
-        const { head, frames } = parseStack(stack);
+        const { head, frames } = stack;
         const lines = frames.map(
             ({ file, line, column }) =>
                 ` ❯ ${pathFrom(this.#directory, file)}:${line}:${column}`
         );
         const message = [head, ...lines].join('\n');
 
-        return { ...(frames[0] ?? declared), title, message };
+        return { ...github.position(frames, declared), title, message };
     }
 }
 
@@ -502,7 +506,7 @@ class Report {
         this.#suiteErrors.push(...results.formatErrors(false));
         this.#testErrors.push(...results.formatErrors(true));
         if (this.#github != null) {
-            for (const annotation of results.annotations()) {
+            for (const annotation of results.annotations(this.#github)) {
                 this.#commands.push(formatErrorCommand(annotation));
             }
         }

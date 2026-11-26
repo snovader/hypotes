@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from 'node:util';
 import { describe, expect } from 'hypotes';
 import { fc, it } from 'hypotes/fast-check';
 import { formatErrorCommand, formatJobSummary, type Annotation } from '#source/github-actions';
@@ -108,12 +109,12 @@ describe('formatErrorCommand', () => {
         });
     });
 
-    it.prop([annotation])("should be read back as it's given", given => {
+    it.prop([annotation])('should round-trip the location, title and plain-text message', given => {
         const { properties, message } = parseCommand(formatErrorCommand(given));
 
         expect(properties.file).toBe(given.file);
         expect(properties.title).toBe(given.title);
-        expect(message).toBe(given.message);
+        expect(message).toBe(stripVTControlCharacters(given.message));
     });
 });
 

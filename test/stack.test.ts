@@ -70,6 +70,8 @@ describe('parseStack', () => {
 
     it('should take a stack without frames for its head', () => {
         expect(parseStack('Error: failed\n')).toStrictEqual({ head: 'Error: failed', frames: [] });
+        const head = 'Error: invalid input\n    at least two values are required';
+        expect(parseStack(head)).toStrictEqual({ head, frames: [] });
         expect(parseStack('')).toStrictEqual({ head: '', frames: [] });
     });
 

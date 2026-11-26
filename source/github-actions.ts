@@ -18,6 +18,9 @@
 // A command's file is an absolute path, as Vitest's is: the runner makes a
 // path inside the workspace relative to the repository itself.
 import { appendFileSync } from 'node:fs';
+import { isAbsolute, relative, sep } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
+import type { Position } from './stack.ts';
 
 /** A failure, at the position in a file that GitHub shows it on */
 export interface Annotation {
@@ -75,7 +78,7 @@ export function formatErrorCommand({
         `col=${column}`
     ];
 
-    return `::error ${properties.join(',')}::${escapeData(message)}`;
+    return `::error ${properties.join(',')}::${escapeData(stripVTControlCharacters(message))}`;
 }
 
 function noun(count: number, singular: string, plural: string): string {
@@ -129,9 +132,11 @@ export function formatJobSummary(files: Stats, tests: Stats): string {
 /** A job of GitHub Actions that the run is a step of */
 export class GitHubActions {
     readonly #summaryPath: string | undefined;
+    readonly #workspace: string | undefined;
 
-    private constructor(summaryPath: string | undefined) {
-        this.#summaryPath = summaryPath;
+    private constructor(env: NodeJS.ProcessEnv) {
+        this.#summaryPath = env.GITHUB_STEP_SUMMARY;
+        this.#workspace = env.GITHUB_WORKSPACE;
     }
 
     /**
@@ -141,8 +146,29 @@ export class GitHubActions {
      */
     static from(env: NodeJS.ProcessEnv): GitHubActions | undefined {
         return env.GITHUB_ACTIONS === 'true'
-            ? new GitHubActions(env.GITHUB_STEP_SUMMARY)
+            ? new GitHubActions(env)
             : undefined;
+    }
+
+    /** The first frame the runner can attach to the checkout, or the declaration */
+    position(frames: readonly Position[], declared: Position): Position {
+        const workspace = this.#workspace;
+        if (!workspace) {
+            return frames[0] ?? declared;
+        }
+
+        const frame = frames.find(({ file }) => {
+            const path = relative(workspace, file);
+            // On Windows, a path on another drive stays absolute.
+            return (
+                isAbsolute(file) &&
+                !isAbsolute(path) &&
+                path !== '..' &&
+                !path.startsWith(`..${sep}`)
+            );
+        });
+
+        return frame ?? declared;
     }
 
     /**

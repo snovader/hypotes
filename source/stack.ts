@@ -33,9 +33,6 @@ const NAMED_FRAME = /^\s+at .*? \((.+):(\d+):(\d+)\)$/;
 /** A frame's line without a name, as `    at async file:line:column` */
 const BARE_FRAME = /^\s+at (?:async )?(.+):(\d+):(\d+)$/;
 
-/** Where the frames of a stack start */
-const FIRST_FRAME = /^\s+at /m;
-
 /** A directory of installed packages in a path, with either separator */
 const NODE_MODULES = /[/\\]node_modules[/\\]/;
 
@@ -43,10 +40,11 @@ const NODE_MODULES = /[/\\]node_modules[/\\]/;
  * The stack's head and its frames in the project's own code: those in a
  * file with an absolute path or a `file:` URL, outside `node_modules`. That
  * leaves out Node's internals, and code without a file, such as an `eval`'s.
- * A stack without frames is all head.
+ * Pass the error's message when available, since even a complete frame
+ * can occur in its text. A stack without frames is all head.
  */
-export function parseStack(stack: string): ParsedStack {
-    const start = FIRST_FRAME.exec(stack)?.index ?? stack.length;
+export function parseStack(stack: string, message?: string): ParsedStack {
+    const start = framesStart(stack, message);
     const frames: Position[] = [];
 
     for (const line of stack.slice(start).split('\n')) {
@@ -58,6 +56,19 @@ export function parseStack(stack: string): ParsedStack {
     }
 
     return { head: stack.slice(0, start).trimEnd(), frames };
+}
+
+/** A multiline message can itself contain lines identical to V8 frames. */
+function framesStart(stack: string, message: string | undefined): number {
+    const firstFrame = /^[ \t]+at (?:.+:\d+:\d+|.+\)|<anonymous>)\r?$/gm;
+    if (message?.includes('\n')) {
+        const start = stack.indexOf(message);
+        if (start >= 0 && start <= stack.indexOf('\n')) {
+            firstFrame.lastIndex = start + message.length;
+        }
+    }
+
+    return firstFrame.exec(stack)?.index ?? stack.length;
 }
 
 /** The position of a frame in the project's own code, if the line is one */

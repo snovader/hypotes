@@ -152,8 +152,9 @@ intent, not a requirement to preserve every detail.
   have to pass, and it would count the files and track the titles again.
   node:test passes a reporter no options, so the variables that GitHub sets
   are the only switch; don't add one of hypotes' own without a need. A
-  failure's position is the innermost frame of its error's stack outside
-  `node_modules` and Node's internals, which `stack.ts` reads from the
+  failure's position is the innermost frame outside `node_modules` and
+  Node's internals and, when set, inside `GITHUB_WORKSPACE`. If no frame
+  qualifies, use the declaration. `stack.ts` reads the frames from the
   stack's text: node:test passes the error from the test file's process,
   where the positions are already those of the code as it's written, as
   `stack.ts` says. The tests of the reporter and of the command run their

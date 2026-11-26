@@ -85,6 +85,7 @@ async function report(
     if (github?.GITHUB_STEP_SUMMARY == null) {
         delete env.GITHUB_STEP_SUMMARY;
     }
+    delete env.GITHUB_WORKSPACE;
 
     const args = [
         ...(preload ? [`--import=${preload}`] : []),
@@ -246,6 +247,19 @@ function commands(text: string): string[] {
 }
 
 describe('a run in GitHub Actions', () => {
+    it('should preserve multiline messages and remove colours from assertion diffs', async () => {
+        const file = join(PROJECTS, 'beta', 'annotations.ts');
+        const output = await report([file], { colors: true, github: { GITHUB_ACTIONS: 'true' } });
+        const [multiline, diff] = commands(output);
+
+        expect(multiline).toContain(`::error file=${property(file)},`);
+        expect(multiline).toContain(
+            '::Error: Invalid input%0A    at least two values are required%0A    at /example.ts:1:2%0A ❯'
+        );
+        expect(diff).toContain('+ actual');
+        expect(diff).not.toContain(ESCAPE);
+    });
+
     it('should print the command of an error for each failure, where it failed', () => {
         const failed = lineOf('assert.equal(actual, expected', MIXED);
         const thrown = lineOf("throw new Error('the hook failed')", HOOK);
@@ -447,6 +461,7 @@ describe('events in GitHub Actions', () => {
     beforeEach(() => {
         vi.stubEnv('GITHUB_ACTIONS', 'true');
         vi.stubEnv('GITHUB_STEP_SUMMARY', undefined);
+        vi.stubEnv('GITHUB_WORKSPACE', undefined);
     });
 
     afterEach(() => {
@@ -475,6 +490,27 @@ describe('events in GitHub Actions', () => {
         expect(commands(text)).toHaveLength(1);
         expect(commands(text)[0]).toContain('::error file=C%3A\\work\\a%2Cb\\win.test.ts,');
         expect(commands(text)[0]).toContain(',line=4,col=2::Error: failed%0A');
+    });
+
+    it('should select the first frame in the workspace or fall back to the declaration', async () => {
+        const workspace = join(parse(process.cwd()).root, 'checkout');
+        vi.stubEnv('GITHUB_WORKSPACE', workspace);
+
+        const file = join(workspace, 'test.ts');
+        const helper = join(workspace, '..helpers', 'check.ts');
+        const outside = `    at ${join(workspace + '-tools', 'assert.ts')}:1:2`;
+        const inside = `    at ${helper}:7:9\n    at ${file}:12:4`;
+        const text = await print([
+            failure(file, 'calls a helper', errorWithStack(`Error: failed\n${outside}\n${inside}`)),
+            failure(file, 'has no local frame', errorWithStack(`Error: failed\n${outside}`)),
+            END
+        ]);
+
+        const [local, fallback] = commands(text);
+        expect(local).toContain(`::error file=${property(helper)},`);
+        expect(local).toContain(',line=7,col=9::');
+        expect(fallback).toContain(`::error file=${property(file)},`);
+        expect(fallback).toContain(',line=3,col=5::');
     });
 
     it.each([

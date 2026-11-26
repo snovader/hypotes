@@ -721,9 +721,9 @@ for each failure:
 ```
 
 GitHub shows the failure as an annotation on that line of the pull request's
-diff. The line is where the error's stack first names the project's own
-code, outside `node_modules`. An error without such a line is annotated
-where its test was declared.
+diff. The reporter uses the first stack frame inside `GITHUB_WORKSPACE`
+and outside `node_modules`. If no frame qualifies, it uses the line where
+the test was declared.
 
 The reporter also appends the run's counts to the
 [job's summary](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#adding-a-job-summary),
