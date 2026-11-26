@@ -13,9 +13,15 @@
 //   diff, or else where its test was declared. Vitest's is at the innermost
 //   frame in a file that Vite transformed, wherever it is, and it annotates
 //   no failure without one.
-// - The summary is titled `hypotes Test Report`, and has no flaky tests,
-//   nor tests expected to fail: node:test retries none, and has no
-//   `it.fails`.
+// - A test with more than one error fails with one AggregateError, since
+//   node:test reports one, so it has one command, which lists each error.
+//   hypotes makes that error, in its code under `node_modules`, so its
+//   stack has no frame in the project, and the command is where the test
+//   was declared. Vitest has a command for each error, at its own frame.
+// - The summary is titled `hypotes Test Report`, and has no flaky tests:
+//   node:test retries none. node:test reports a test that `fails` as passed
+//   when it fails, so the summary counts it among the passes, where
+//   Vitest's counts it as an expected failure.
 // - It takes no options. Vitest's `onWritePath`, `displayAnnotations` and
 //   `jobSummary` are options of its reporter, and node:test passes a
 //   reporter none. The variables that GitHub sets are the only switch.

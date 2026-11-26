@@ -794,6 +794,14 @@ Where it differs from Vitest's:
 - **A file that fails as it loads.** node:test reports only that it failed,
   so its annotation is on the file's first line, and says `test failed`. The
   error is in the step's log.
+- **More than one error.** A test with more than one, such as two failed
+  soft assertions, fails with one `AggregateError`, as
+  [The end of a test](#the-end-of-a-test) says. So it has one annotation,
+  where the test was declared, and its message lists each error. Vitest
+  annotates each error at its own line.
+- **Expected failures.** node:test reports a test that `fails` as passed
+  when it fails, so the summary counts it among the passes. Vitest's counts
+  it as an expected failure.
 - **No flaky tests.** Vitest's summary lists the tests that passed on a
   retry. node:test retries none.
 - **No options.** node:test passes a reporter no options, so Vitest's
