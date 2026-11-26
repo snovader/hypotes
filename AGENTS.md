@@ -11,13 +11,17 @@ intent, not a requirement to preserve every detail.
   node:test's, `current-test.ts` keeps the test that is running, `test-run.ts`
   runs a test as Vitest's runner does, `test-hooks.ts` has the callbacks of a
   test's end, `expect.ts` assembles the matchers, `poll.ts` polls a matcher,
-  `site.ts` records where each test was declared, `mocks.ts` mocks modules,
-  `hoist.ts` hoists the mocks of a test file, `timers.ts` fakes timers,
-  `stubs.ts` stubs globals, `wait.ts` waits for a function to succeed,
-  `project.ts` finds the package that a test file belongs to, `reporter.ts`
-  prints node:test's results by file, `project-filter.ts` selects projects by
-  `--project`'s patterns, `test-files.ts` finds the test files of the selected
-  projects, and `cli.ts` launches Node with them.
+  `diff.ts` has the lines by which two values differ, `snapshot.ts` has the
+  snapshot matchers, `snapshot-session.ts` reads and saves the snapshots of
+  the test files that a process runs, `declared.ts` keeps the tests that
+  were declared but haven't run, `site.ts` records where each test was
+  declared, `mocks.ts` mocks modules, `hoist.ts` hoists the mocks of a test
+  file, `timers.ts` fakes timers, `stubs.ts` stubs globals, `wait.ts` waits
+  for a function to succeed, `project.ts` finds the package that a test file
+  belongs to, `reporter.ts` prints node:test's results by file,
+  `project-filter.ts` selects projects by `--project`'s patterns,
+  `test-files.ts` finds the test files of the selected projects, and `cli.ts`
+  launches Node with them.
 - Search for existing implementations and related abstractions before adding
   code. Always consider reusability and where behavior belongs. Keep a helper
   local when its responsibility is local; share it when it has a coherent role
@@ -142,11 +146,37 @@ intent, not a requirement to preserve every detail.
   test, which node:test runs after its `afterEach` hooks. `expect.soft` and
   the checks that a `.resolves` is awaited are `@vitest/expect`'s, which
   read and write the fields of Vitest's test that `ExpectTask` names. Build
-  what else needs the running test, such as snapshots, on `currentTest()`.
-- Reuse Vitest's own packages, `@vitest/expect`, `@vitest/spy`, and
-  `@vitest/utils`, rather than reimplementing their matchers, spies, or
-  formatting. Their versions move together, which Dependabot's `vitest` group
-  keeps.
+  what else needs the running test on `currentTest()`, as the snapshot
+  matchers are.
+- Snapshots are `@vitest/snapshot`'s, so the files are Vitest's, to the
+  byte: a change that makes one differ is a bug. `snapshot.ts` is the chai
+  plugin of the `vitest` package, which no `@vitest/*` package has, with
+  Vitest's errors. `snapshot-session.ts` does the part of Vitest's runner:
+  it reads a test file's snapshots once a test of it calls a matcher, and
+  saves them in an `after` hook of node:test's root, which it adds then, so
+  that a test file without snapshots loads nothing of it, and has no hook.
+  A matcher answers without awaiting, so the session builds
+  `SnapshotState` itself, where `SnapshotState.create()` reads through
+  promises: it calls the constructor that TypeScript keeps private, with
+  what `create()` passes it, which a new version of `@vitest/snapshot` may
+  change. node:test adds a hook to the test that is running, which it finds
+  by the id of what is executing, so the hook is added from an
+  `AsyncResource` outside any test's. Both are covered by
+  `test/snapshots.test.ts`, on each version of Node.
+- Whether snapshots are written comes from `UPDATE_SNAPSHOT`, as Vitest
+  reads it, from node:test's `--test-update-snapshots`, which node:test
+  passes on to each test file's process, and from `CI`. The command has no
+  `-u`: node:test has a flag for it. node:test says nothing of a test that
+  it doesn't run, so `tests.ts` records each test and suite as it's
+  declared, in `declared.ts`, and the session takes the snapshots of those
+  that didn't run for used, as Vitest takes a skipped test's. Without that,
+  an update under `--test-name-pattern` would remove the snapshots of every
+  other test. What a run wrote goes to a diagnostic of node:test, for each
+  test file.
+- Reuse Vitest's own packages, `@vitest/expect`, `@vitest/snapshot`,
+  `@vitest/spy`, and `@vitest/utils`, rather than reimplementing their
+  matchers, snapshots, spies, or formatting. Their versions move together,
+  which Dependabot's `vitest` group keeps.
 - `hypotes/reporter` is a reporter for node:test, not a runner: it prints
   the events that node:test reports, a row for each file, with its project,
   in the format of Vitest's default reporter. It counts tests as node:test
@@ -273,6 +303,17 @@ intent, not a requirement to preserve every detail.
   hypotes, and declare node:test's tests. It gives the reporter events of
   its own making only for what a run in the repository can't have, such as
   a file that no package is above.
+- `test/snapshots.test.ts` runs the fixtures in `test/fixtures/snapshots/`
+  in another process, on a copy in a temporary directory, which it removes,
+  and compares every file there with `test/fixtures/snapshots-by-vitest/`:
+  what Vitest wrote for the same files, from the same state. Its header
+  says how the files are changed for Vitest. After a change to a fixture,
+  or a move of Vitest's packages, run the fixtures on that version of
+  Vitest, in a project outside the repository, and replace the directory
+  with what it wrote. oxfmt leaves both directories alone: an inline
+  snapshot is written where its call is laid out. A test that needs
+  snapshots that differ or go unused sets the variables that
+  `fixtures/snapshots/changes.ts` reads, rather than editing a file.
 - `yarn test` preloads `hypotes/register`, which node:test passes on to each
   test file's process, so a test file can mock modules, as
   `test/mocks.test.ts` does. A mock lasts for the rest of the file's
@@ -336,6 +377,11 @@ intent, not a requirement to preserve every detail.
   turns off the colours of the copy of tinyrainbow that they load, and
   `timers.ts` loads `@sinonjs/fake-timers` once a test fakes the timers or
   the date, so that a test file that doesn't fake them doesn't load it.
+  `snapshot-session.ts` loads `@vitest/snapshot` once a test calls a
+  snapshot matcher, for the same reason. It's a dependency, as the other
+  packages of Vitest are, which it shares `@vitest/utils` with, and it
+  depends on magic-string itself, which it loads to write an inline
+  snapshot.
   fast-check, oxlint,
   oxc-parser, and magic-string are optional peer dependencies, for the entry
   points that need them: `hypotes/fast-check` imports fast-check,

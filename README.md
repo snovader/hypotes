@@ -11,11 +11,12 @@ TypeScript by [stripping its
 types](https://nodejs.org/api/typescript.html#type-stripping), so a test file,
 and what it imports, has to run on Node as it's written.
 
-Use hypotes when you want Vitest's matchers, spies, module mocks and fake
-timers, but node:test as the runner. A test file that uses what both have
-moves between Vitest and hypotes by changing its imports. If you need what
-only Vitest has, such as snapshots, browser mode or Vite's transforms, use
-Vitest: [Left out](#left-out) lists what hypotes doesn't have.
+Use hypotes when you want Vitest's matchers, snapshots, spies, module mocks
+and fake timers, but node:test as the runner. A test file that uses what
+both have moves between Vitest and hypotes by changing its imports, and its
+snapshots stay as they are. If you need what only Vitest has, such as
+browser mode or Vite's transforms, use Vitest: [Left out](#left-out) lists
+what hypotes doesn't have.
 
 hypotes needs Node 24.13.1 or later.
 
@@ -160,6 +161,131 @@ it('greets the name in the file', () => {
 Module mocks differ from Vitest's in a few ways, which
 [Module mocks](#module-mocks) under the differences lists.
 
+## Snapshots
+
+The snapshot matchers are Vitest's, and write the files that Vitest writes,
+to the byte. So the snapshots of a project that moves from Vitest keep
+passing, and they pass in Vitest again if it moves back. There is nothing
+more to install.
+
+Write a test, as `test/user.test.ts`:
+
+```ts
+import { expect, it } from 'hypotes';
+
+it('describes a user', () => {
+    expect({ name: 'Ada', roles: ['admin'] }).toMatchSnapshot();
+});
+```
+
+Run it:
+
+```bash
+node --test
+```
+
+The first run writes the snapshot, to
+`test/__snapshots__/user.test.ts.snap`, and says so:
+
+```text
+✔ describes a user (6.028542ms)
+ℹ snapshots of test/user.test.ts: 1 written
+```
+
+Commit that file. Later runs compare the value with it, and a value that
+differs fails the test, with the lines that differ:
+
+```text
+✖ describes a user (5.914417ms)
+  Error: Snapshot `describes a user 1` mismatched
+
+  + actual - expected
+
+    ...
+      "name": "Ada",
+      "roles": [
+        "admin",
+  +     "dev",
+      ],
+    }
+```
+
+These are the matchers. [Vitest's guide](https://vitest.dev/guide/snapshot)
+documents each.
+
+| Matcher                                | Compares with                                                |
+| -------------------------------------- | ------------------------------------------------------------ |
+| `toMatchSnapshot()`                    | The test's snapshot in `__snapshots__/<test file>.snap`      |
+| `toMatchInlineSnapshot()`              | Its argument, which the first run writes into the test file  |
+| `toMatchFileSnapshot(path)`            | A file of its own, relative to the test file. Await it.      |
+| `toThrowErrorMatchingSnapshot()`       | As `toMatchSnapshot()`, for the error that a function throws |
+| `toThrowErrorMatchingInlineSnapshot()` | As `toMatchInlineSnapshot()`, for that error                 |
+
+`expect.addSnapshotSerializer()` adds a serializer, for the rest of the
+test file's process.
+
+`toMatchFileSnapshot()` compares a string as it is, so it suits output that
+is a file of its own, such as generated code or HTML:
+
+```ts
+// test/render.test.ts
+import { expect, it } from 'hypotes';
+
+it('renders the page', async () => {
+    const html = '<h1>Ada</h1>\n';
+
+    await expect(html).toMatchFileSnapshot('./expected/page.html');
+});
+```
+
+### Updating snapshots
+
+A run writes the snapshots that are new. To write those that changed too,
+pass node:test's flag:
+
+```bash
+node --test --test-update-snapshots
+```
+
+```text
+✔ describes a user (5.166959ms)
+ℹ snapshots of test/user.test.ts: 1 updated
+```
+
+[The `hypotes` command](#the-hypotes-command) passes the flag on, as
+`npx hypotes --test-update-snapshots`. It has no `-u`, which is Vitest's
+own.
+
+`UPDATE_SNAPSHOT` in the environment does the same, as it does in Vitest,
+and says more:
+
+| `UPDATE_SNAPSHOT`   | A run writes                                                  |
+| ------------------- | ------------------------------------------------------------- |
+| `all`, or the flag  | Every snapshot that is new or changed, and removes the unused |
+| `new`               | Only the new ones. The default.                               |
+| `none`              | None. A test without a snapshot fails. The default in a CI.   |
+| Another value, as 1 | As `all`                                                      |
+
+A CI is where `CI` is set. There, a test whose snapshot was never committed
+fails, rather than passing on a snapshot that the run wrote.
+
+### Snapshots that no test uses
+
+A snapshot whose test was renamed or removed stays in its file. A run says
+so:
+
+```text
+ℹ snapshots of test/user.test.ts: 1 written, 1 obsolete
+ℹ obsolete snapshot of test/user.test.ts: describes a user 1
+```
+
+An update removes it. In a CI, it fails the test file, as in Vitest. The
+snapshots of a test that didn't run are kept: a skipped test's, and those
+that `--test-name-pattern` or `--test-only` left out.
+
+[Snapshots](#snapshots-1) under the differences says where they differ from
+Vitest's.
+
 ## TypeScript that Node doesn't strip
 
 Node strips types, but rejects TypeScript that needs compiling, such as
@@ -252,10 +378,13 @@ that was imported before, and mocks of built-in modules don't apply.
    set up [the preload](#mocking-modules) first.
 4. Replace what [Left out](#left-out) lists. The table names what node:test
    has instead.
-5. Read [Differences from Vitest](#differences-from-vitest) for behaviour that
+5. Keep the snapshots that Vitest wrote: hypotes reads the same files.
+   Update them with `--test-update-snapshots`, where Vitest takes `-u`, as
+   [Updating snapshots](#updating-snapshots) says.
+6. Read [Differences from Vitest](#differences-from-vitest) for behaviour that
    changes without an error, such as the order of after hooks, and tests
    that have no timeout.
-6. If the project lints its tests with oxlint's vitest rules, switch to
+7. If the project lints its tests with oxlint's vitest rules, switch to
    [`hypotes/oxlint`](#lint-rules).
 
 ## Entry points
@@ -279,6 +408,10 @@ it, apart from the differences below.
   `expect.extend()`, `expect.addEqualityTesters()` and `expect.fail()`, and
   the members that need the test that is running: `expect.soft()`,
   `expect.poll()`, `expect.assertions()` and `expect.hasAssertions()`.
+- The snapshot matchers, `toMatchSnapshot()`, `toMatchInlineSnapshot()`,
+  `toMatchFileSnapshot()`, `toThrowErrorMatchingSnapshot()` and
+  `toThrowErrorMatchingInlineSnapshot()`, and
+  `expect.addSnapshotSerializer()`, which [Snapshots](#snapshots) describes.
 - A test's context, which is node:test's, with Vitest's `expect`,
   `onTestFinished` and `onTestFailed` added.
 - `vi`, with these members:
@@ -356,7 +489,7 @@ in another form. Of `vi`, hypotes has only the members that
 | `aroundEach`, `aroundAll`, `inject`                                               | None                                                                          |
 | The context's `task` and `annotate`                                               | node:test's context, with `t.name`, `t.fullName` and `t.diagnostic()`         |
 | `expect.unreachable`                                                              | `expect.fail()`                                                               |
-| `toMatchSnapshot` and the other snapshot matchers, `expect.addSnapshotSerializer` | node:test's `t.assert.snapshot()`                                             |
+| `Snapshots`, for custom snapshot matchers                                         | None                                                                          |
 | `expectTypeOf`, `assertType`                                                      | The `expect-type` package, which Vitest's `expectTypeOf` comes from           |
 | `assert`, `chai`, `should`                                                        | The `chai` package, which Vitest's come from                                  |
 | `vi.resetModules`                                                                 | None                                                                          |
@@ -418,6 +551,37 @@ node:test runs the test, so these differ:
 - **Timeouts of callbacks.** An `onTestFinished` or `onTestFailed` callback
   has a timeout only if it's given one, as its second argument. Vitest gives
   each 10 seconds.
+
+### Snapshots
+
+The snapshot files, the keys of the snapshots, and what an inline snapshot
+writes into a test file are Vitest's. These differ:
+
+- **Updating.** Vitest takes `-u` or `--update`. hypotes takes node:test's
+  `--test-update-snapshots`, or `UPDATE_SNAPSHOT`, which Vitest reads too.
+  Watch mode has no key that updates.
+- **Where a CI is.** Vitest finds a CI by the variables of each provider.
+  hypotes reads `CI`, which most of them set. Elsewhere, set
+  `UPDATE_SNAPSHOT=none`.
+- **What a run reports.** Vitest counts the run's snapshots in its summary.
+  Each test file whose snapshots were written, updated, removed, or are
+  obsolete reports it in a line of its own, as a diagnostic of node:test.
+- **Tests that didn't run.** As in Vitest, a skipped test's snapshots aren't
+  obsolete. Neither are those of a `.todo` test without a function, or of a
+  test whose `beforeEach` hook failed, which Vitest counts as obsolete.
+- **Tests that run at once.** A snapshot matcher takes the test that calls
+  it. Vitest's `expect` takes the test that started last, so tests that run
+  at once need the `expect` of their context.
+- **One process.** With `--test-isolation=none`, the snapshots of every test
+  file are saved once the tests of all of them have run.
+- **Options.** Vitest's configuration has `snapshotFormat`,
+  `snapshotSerializers`, `resolveSnapshotPath`, `snapshotEnvironment` and
+  `expandSnapshotDiff`. hypotes has no configuration, and uses Vitest's
+  defaults. A preload can call `expect.addSnapshotSerializer()` for every
+  test file.
+- **A `beforeEach` hook of a test that `fails`.** A snapshot matcher throws
+  in a test that `fails`, as in Vitest. In a `beforeEach` hook of such a
+  test, it doesn't.
 
 ### Equality
 
@@ -794,15 +958,15 @@ Rules for how tests are declared:
 
 Rules for assertions:
 
-| Rule                       | What it checks                                                                                            |
-| -------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `expect-expect`            | Each test calls `expect()`, its `soft()` or `poll()`, or a function whose name starts with `expect`.      |
-| `no-standalone-expect`     | `expect()` runs in a test or in a function, not in a suite or at the top of a module.                     |
-| `valid-expect`             | A matcher is called on `expect()`, and `expect.poll()`, `.resolves` or `.rejects` is awaited or returned. |
-| `valid-expect-in-promise`  | A promise whose callback calls `expect()`, as in `.then()`, is awaited or returned.                       |
-| `require-to-throw-message` | `toThrow()` and `toThrowError()` say what the error should be, unless they follow `.not`.                 |
-| `prefer-to-be`             | `toBe()` for a primitive, and `toBeNull()` and its like, rather than `toEqual()`. Fix.                    |
-| `prefer-to-have-length`    | `expect(values).toHaveLength(n)`, rather than comparing `values.length` with `n`. Fix.                    |
+| Rule                       | What it checks                                                                                                                     |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `expect-expect`            | Each test calls `expect()`, its `soft()` or `poll()`, or a function whose name starts with `expect`.                               |
+| `no-standalone-expect`     | `expect()` runs in a test or in a function, not in a suite or at the top of a module.                                              |
+| `valid-expect`             | A matcher is called on `expect()`, and `expect.poll()`, `.resolves`, `.rejects` or `toMatchFileSnapshot()` is awaited or returned. |
+| `valid-expect-in-promise`  | A promise whose callback calls `expect()`, as in `.then()`, is awaited or returned.                                                |
+| `require-to-throw-message` | `toThrow()` and `toThrowError()` say what the error should be, unless they follow `.not`.                                          |
+| `prefer-to-be`             | `toBe()` for a primitive, and `toBeNull()` and its like, rather than `toEqual()`. Fix.                                             |
+| `prefer-to-have-length`    | `expect(values).toHaveLength(n)`, rather than comparing `values.length` with `n`. Fix.                                             |
 
 Rules for mocks:
 
