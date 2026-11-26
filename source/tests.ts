@@ -5,6 +5,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import * as nodeTest from 'node:test';
 import { toArray } from '@vitest/utils/helpers';
 import type { TestContext } from './current-test.ts';
+import { declare, declareIn, startTest } from './declared.ts';
 import { callerSite, callFrom, type Site } from './site.ts';
 import { parseTable } from './table.ts';
 import { runTest } from './test-run.ts';
@@ -330,6 +331,20 @@ function forEach<Fn>(
     };
 }
 
+/** node:test's `it`, as it's called here: of its overloads, the last is inferred */
+type DeclareTest = (
+    name: string,
+    options: nodeTest.TestOptions,
+    fn: nodeTest.TestFn | undefined
+) => unknown;
+
+/** node:test's `describe`, as it's called here */
+type DeclareSuite = (
+    name: string,
+    options: nodeTest.TestOptions,
+    fn: nodeTest.SuiteFn | undefined
+) => unknown;
+
 /**
  * Whether the tests that a suite's function declares fail, as the suite's
  * options have it: node:test knows nothing of `fails`
@@ -346,12 +361,16 @@ function registerTest(
     fn: ((context: never) => unknown) | undefined,
     site: Site | undefined
 ): void {
+    const declared = declare(name);
     // node:test passes a callback as well to a function of two parameters
     const test =
         fn &&
-        ((context: nodeTest.TestContext): Promise<void> =>
-            runTest(context, fn as TestFunction, fails));
-    void callFrom(site, nodeTest.it, name, options, test);
+        ((context: nodeTest.TestContext): Promise<void> => {
+            startTest(declared);
+
+            return runTest(context, fn as TestFunction, fails);
+        });
+    void callFrom(site, nodeTest.it as DeclareTest, name, options, test);
 }
 
 /** Declares a suite through node:test, which awaits it */
@@ -361,13 +380,16 @@ function registerSuite(
     fn: ((context: never) => unknown) | undefined,
     site: Site | undefined
 ): void {
+    const declared = declare(name);
     const suite =
         fn &&
         ((context: SuiteContext) =>
-            suiteFails.run(fails, () => (fn as SuiteFunction)(context)));
+            declareIn(declared, () =>
+                suiteFails.run(fails, () => (fn as SuiteFunction)(context))
+            ));
     void callFrom(
         site,
-        nodeTest.describe,
+        nodeTest.describe as DeclareSuite,
         name,
         options,
         suite as nodeTest.SuiteFn | undefined

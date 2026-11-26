@@ -1,0 +1,17 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`external 1`] = `
+{
+  "lines": "one
+two",
+  "value": "first",
+}
+`;
+
+exports[`named 1`] = `"named"`;
+
+exports[`skippable > hint 1`] = `"hinted"`;
+
+exports[`skippable 1`] = `"skippable"`;
+
+exports[`skippable suite > inner > in a suite 1`] = `"in a suite"`;

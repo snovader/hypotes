@@ -9,7 +9,7 @@
 //   `expect.assertions()` and `expect.hasAssertions()` hold for tests that
 //   run at once too, where Vitest's count every test's, unless a test takes
 //   `expect` from its context. Outside a test, they do nothing.
-import { diff, inspect, styleText, type InspectOptions } from 'node:util';
+import { styleText } from 'node:util';
 import {
     addCustomEqualityTesters,
     chai,
@@ -27,8 +27,14 @@ import {
 } from '@vitest/expect';
 import { disableDefaultColors } from 'tinyrainbow';
 import { currentTest, type ExpectTask } from './current-test.ts';
+import { diffValues } from './diff.ts';
 import { fastEquality } from './equals.ts';
 import { createPoll, type PollFunction, type PollOptions } from './poll.ts';
+import {
+    addSnapshotSerializer,
+    type SnapshotSerializer
+} from './snapshot-session.ts';
+import { SnapshotPlugin } from './snapshot.ts';
 import { fakeClock } from './timers.ts';
 
 // @vitest/expect colours the messages of its spies' matchers with
@@ -44,6 +50,7 @@ if (styleText('red', 'text') === 'text') {
 
 chai.use(JestExtend);
 chai.use(JestChaiExpect);
+chai.use(SnapshotPlugin);
 chai.use(JestAsymmetricMatchers);
 
 /**
@@ -82,6 +89,11 @@ export interface Expect
     assertions: (expected: number) => void;
     /** Fails the test unless `expect()` is called by the end of its function */
     hasAssertions: () => void;
+    /**
+     * Adds a serializer, which the snapshots of the process try before
+     * those that they have
+     */
+    addSnapshotSerializer: (serializer: SnapshotSerializer) => void;
 }
 
 /** An assertion of chai's, with what @vitest/expect adds for Vitest's runner */
@@ -143,7 +155,8 @@ export const expect = Object.assign(
             assertionOf(actual, message).withContext({ soft: true }),
         poll: createPoll(assertionOf, fakeClock),
         assertions,
-        hasAssertions
+        hasAssertions,
+        addSnapshotSerializer
     }
 ) as unknown as Expect;
 
@@ -161,121 +174,6 @@ setState(
 // `toSatisfy` and `toBeOneOf`, which Vitest's `expect` adds
 expect.extend(customMatchers);
 addCustomEqualityTesters([fastEquality]);
-
-const INSPECT_OPTIONS: InspectOptions = {
-    depth: Infinity,
-    maxArrayLength: Infinity,
-    maxStringLength: Infinity,
-    sorted: true
-};
-
-/** Unchanged lines kept around each change */
-const CONTEXT = 3;
-
-/**
- * The lines of each value that are compared, from the first that differs:
- * comparing takes time that grows with their number times the number that
- * differ, which is seconds for tens of thousands of lines
- */
-const MAX_LINES = 1000;
-
-const OMITTED = '  ...';
-
-/**
- * The lines of two values' inspections that differ, with some around them,
- * or undefined if none does
- */
-function describeDiff(actual: unknown, expected: unknown): string | undefined {
-    const actualLines = inspect(actual, INSPECT_OPTIONS).split('\n');
-    const expectedLines = inspect(expected, INSPECT_OPTIONS).split('\n');
-
-    // The lines that both start and end with are the same in both
-    const start = commonStart(actualLines, expectedLines);
-    const end = commonEnd(actualLines, expectedLines, start);
-    if (start + end === Math.max(actualLines.length, expectedLines.length)) {
-        return undefined;
-    }
-
-    const from = Math.max(0, start - CONTEXT);
-    const actualTo = Math.min(
-        actualLines.length - end + CONTEXT,
-        from + MAX_LINES
-    );
-    const expectedTo = Math.min(
-        expectedLines.length - end + CONTEXT,
-        from + MAX_LINES
-    );
-    const changes = diff(
-        actualLines.slice(from, actualTo),
-        expectedLines.slice(from, expectedTo)
-    );
-    const hasAfter =
-        actualTo < actualLines.length || expectedTo < expectedLines.length;
-
-    return describeChanges(changes, from > 0, hasAfter);
-}
-
-/** How many lines both start with */
-function commonStart(a: readonly string[], b: readonly string[]): number {
-    const length = Math.min(a.length, b.length);
-    let count = 0;
-    while (count < length && a[count] === b[count]) {
-        count++;
-    }
-
-    return count;
-}
-
-/** How many lines both end with, after the `start` that both start with */
-function commonEnd(
-    a: readonly string[],
-    b: readonly string[],
-    start: number
-): number {
-    const length = Math.min(a.length, b.length) - start;
-    let count = 0;
-    while (
-        count < length &&
-        a[a.length - 1 - count] === b[b.length - 1 - count]
-    ) {
-        count++;
-    }
-
-    return count;
-}
-
-/**
- * The changed lines, each marked as the actual value's or the expected
- * one's, with the unchanged lines around them, and a mark where others are
- * left out: between them, and before and after, if there are any
- */
-function describeChanges(
-    changes: ReturnType<typeof diff>,
-    hasBefore: boolean,
-    hasAfter: boolean
-): string {
-    const changed = changes.map(([operation]) => operation !== 0);
-    const nearChange = (index: number): boolean =>
-        changed
-            .slice(Math.max(0, index - CONTEXT), index + CONTEXT + 1)
-            .includes(true);
-
-    const lines: string[] = hasBefore ? [OMITTED] : [];
-    for (const [index, [operation, line]] of changes.entries()) {
-        if (nearChange(index)) {
-            lines.push(
-                `${operation === 1 ? '+' : operation === -1 ? '-' : ' '} ${line}`
-            );
-        } else if (lines.at(-1) !== OMITTED) {
-            lines.push(OMITTED);
-        }
-    }
-    if (hasAfter && lines.at(-1) !== OMITTED) {
-        lines.push(OMITTED);
-    }
-
-    return lines.join('\n');
-}
 
 // node:test's reporters print an assertion error's message and values, but
 // not the diff of the values that Vitest's reporter prints, so the message of
@@ -296,7 +194,7 @@ if (!assert[WITH_DIFF]) {
             assert.apply(this, args);
         } catch (error) {
             if (error instanceof chai.AssertionError && error.showDiff) {
-                const changes = describeDiff(error.actual, error.expected);
+                const changes = diffValues(error.actual, error.expected);
                 if (changes != null) {
                     error.message += `\n\n+ actual - expected\n\n${changes}`;
                 }

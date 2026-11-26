@@ -14,7 +14,8 @@
 // types of arguments, such as a title's, so the rules don't. They take no
 // options. They read the options of a test before its function, where Vitest
 // and node:test take them: no-focused-tests, no-disabled-tests and warn-todo
-// report `only`, `skip` and `todo` there too. valid-expect-in-promise follows a promise
+// report `only`, `skip` and `todo` there too. valid-expect asks for the
+// promise of `toMatchFileSnapshot()` too. valid-expect-in-promise follows a promise
 // through the variable that holds it, and counts a method of Promise, such
 // as `Promise.all()`, only where it's awaited or returned. hoisted-apis-on-top
 // accepts what `hypotes/register` hoists: `vi.hoisted()` that declares one
@@ -101,6 +102,9 @@ const EXPECT_MEMBERS: ReadonlySet<string> = new Set(['poll', 'soft']);
 
 /** Members of `expect` that start an assertion whose matchers return promises */
 const ASYNC_EXPECT_MEMBERS: ReadonlySet<string> = new Set(['poll']);
+
+/** Matchers that return promises, whatever they follow */
+const ASYNC_MATCHERS: ReadonlySet<string> = new Set(['toMatchFileSnapshot']);
 
 /** Matchers of one value, for which others may say more */
 const EQUALITY_MATCHERS: ReadonlySet<string> = new Set([
@@ -1077,7 +1081,7 @@ export const validExpect: Rule = {
         type: 'problem',
         docs: {
             description:
-                'Requires a matcher to be called on expect(), and the promise of expect.poll(), .resolves or .rejects to be awaited or returned. TypeScript checks the arguments of expect().'
+                'Requires a matcher to be called on expect(), and the promise of expect.poll(), .resolves, .rejects or toMatchFileSnapshot() to be awaited or returned. TypeScript checks the arguments of expect().'
         }
     },
     create(context) {
@@ -1112,6 +1116,15 @@ export const validExpect: Rule = {
                         node: matcherCall,
                         message:
                             'Expected the promise of .resolves or .rejects to be awaited or returned'
+                    });
+                } else if (
+                    chain.matcher != null &&
+                    ASYNC_MATCHERS.has(chain.matcher.property.name) &&
+                    !isAwaitedOrReturned(matcherCall)
+                ) {
+                    context.report({
+                        node: matcherCall,
+                        message: `Expected the promise of ${chain.matcher.property.name}() to be awaited or returned`
                     });
                 }
             }

@@ -1,0 +1,202 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`asymmetric 1`] = `
+{
+  "a": Any<String>,
+  "b": StringContaining "x",
+}
+`;
+
+exports[`errors > the hint 1`] = `[RangeError: with hint]`;
+
+exports[`errors 1`] = `[Error: plain]`;
+
+exports[`errors 2`] = `[TypeError: typed]`;
+
+exports[`errors 3`] = `
+[Error: thrown
+over lines]
+`;
+
+exports[`hints and counters > a hint 1`] = `"hinted"`;
+
+exports[`hints and counters > a hint 2`] = `"hinted again"`;
+
+exports[`hints and counters > b hint 1`] = `"other"`;
+
+exports[`hints and counters 1`] = `"first"`;
+
+exports[`hints and counters 2`] = `"second"`;
+
+exports[`mock functions 1`] = `
+[MockFunction] {
+  "calls": [
+    [
+      1,
+      "a",
+    ],
+  ],
+  "results": [
+    {
+      "type": "return",
+      "value": undefined,
+    },
+  ],
+}
+`;
+
+exports[`mock functions 2`] = `[MockFunction named]`;
+
+exports[`name with \`backtick\` and \${dollar} and 10 2 1`] = `"odd"`;
+
+exports[`objects 1`] = `
+{
+  "a": 1,
+  "b": [
+    1,
+    2,
+    {
+      "c": "d",
+    },
+  ],
+  "e": Map {
+    "k" => Set {
+      1,
+    },
+  },
+}
+`;
+
+exports[`objects 2`] = `
+Point {
+  "x": 1,
+  "y": 2,
+}
+`;
+
+exports[`objects 3`] = `[]`;
+
+exports[`objects 4`] = `{}`;
+
+exports[`objects 5`] = `1970-01-01T00:00:00.000Z`;
+
+exports[`objects 6`] = `/re\\+/gi`;
+
+exports[`objects 7`] = `Symbol(s)`;
+
+exports[`objects 8`] = `[Function]`;
+
+exports[`objects 9`] = `
+Uint8Array [
+  1,
+  2,
+]
+`;
+
+exports[`objects 10`] = `{}`;
+
+exports[`outer > in suite 1`] = `"outer"`;
+
+exports[`outer > inner > with arrow > deep 1`] = `"deep"`;
+
+exports[`outer > inner > with arrow > each 1 is one 1`] = `
+{
+  "n": 1,
+  "s": "one",
+}
+`;
+
+exports[`outer > inner > with arrow > each 2 is two 1`] = `
+{
+  "n": 2,
+  "s": "two",
+}
+`;
+
+exports[`outer > inner > with arrow > for 1 1`] = `2`;
+
+exports[`outer > inner > with arrow > for 2 1`] = `4`;
+
+exports[`outer > inner > with arrow > object x 1`] = `
+{
+  "name": "x",
+}
+`;
+
+exports[`outer > inner > with arrow > object y 1`] = `
+{
+  "name": "y",
+}
+`;
+
+exports[`outer > suite a > row 1`] = `"a"`;
+
+exports[`outer > suite b > row 1`] = `"b"`;
+
+exports[`primitives 1`] = `1`;
+
+exports[`primitives 2`] = `"text"`;
+
+exports[`primitives 3`] = `null`;
+
+exports[`primitives 4`] = `undefined`;
+
+exports[`primitives 5`] = `12n`;
+
+exports[`primitives 6`] = `-0`;
+
+exports[`property matchers > with hint 1`] = `
+{
+  "id": Any<Number>,
+  "name": "m",
+}
+`;
+
+exports[`property matchers 1`] = `
+{
+  "at": Any<Date>,
+  "id": Any<Number>,
+  "name": "n",
+  "nested": {
+    "v": Any<Number>,
+    "w": 1,
+  },
+}
+`;
+
+exports[`rejects 1`] = `[Error: rejected]`;
+
+exports[`rejects 2`] = `
+{
+  "ok": true,
+}
+`;
+
+exports[`same name 1`] = `"same 1"`;
+
+exports[`same name 2`] = `"same 2"`;
+
+exports[`serializer 1`] = `Point(3, 4)`;
+
+exports[`serializer 2`] = `
+{
+  "p": Point(5, 6),
+}
+`;
+
+exports[`strings 1`] = `
+"one
+two
+  three"
+`;
+
+exports[`strings 2`] = `"back\`tick \${dollar} \\ slash "quote" 'single'"`;
+
+exports[`strings 3`] = `
+"crlf
+line"
+`;
+
+exports[`strings 4`] = `""`;
+
+exports[`strings 5`] = `"  padded  "`;

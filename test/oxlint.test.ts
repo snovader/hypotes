@@ -191,6 +191,8 @@ tester.run('no-standalone-expect', plugin.rules['no-standalone-expect'], {
 const NO_MATCHER = 'Expected a matcher, such as toBe(), to be called on expect()';
 const NOT_AWAITED = 'Expected the promise of .resolves or .rejects to be awaited or returned';
 const POLL_NOT_AWAITED = 'Expected the promise of expect.poll() to be awaited or returned';
+const FILE_SNAPSHOT_NOT_AWAITED =
+    'Expected the promise of toMatchFileSnapshot() to be awaited or returned';
 
 tester.run('valid-expect', plugin.rules['valid-expect'], {
     valid: [
@@ -213,6 +215,12 @@ tester.run('valid-expect', plugin.rules['valid-expect'], {
         imported('await expect.poll(() => value).toBe(1);'),
         imported('await expect.poll(() => value, { timeout: 10 }).not.toBe(1);'),
         imported('const check = (): Promise<void> => expect.poll(() => value).toBe(1);'),
+        imported('expect(value).toMatchSnapshot();'),
+        imported('expect(value).toMatchInlineSnapshot();'),
+        imported("await expect(value).toMatchFileSnapshot('./expected.txt');"),
+        imported(
+            "const check = (): Promise<void> => expect(value).toMatchFileSnapshot('./expected.txt');"
+        ),
         // A member of `expect` that makes an asymmetric matcher, rather than an assertion
         imported('const any = expect.any(Number);')
     ],
@@ -271,6 +279,16 @@ tester.run('valid-expect', plugin.rules['valid-expect'], {
             name: 'a soft assertion of a promise that is neither awaited nor returned',
             code: imported('expect.soft(promise).resolves.toBe(1);'),
             errors: [{ message: NOT_AWAITED }]
+        },
+        {
+            name: 'a file snapshot that is neither awaited nor returned',
+            code: imported("expect(value).toMatchFileSnapshot('./expected.txt');"),
+            errors: [{ message: FILE_SNAPSHOT_NOT_AWAITED }]
+        },
+        {
+            name: 'a soft file snapshot that is neither awaited nor returned',
+            code: imported("expect.soft(value).toMatchFileSnapshot('./expected.txt');"),
+            errors: [{ message: FILE_SNAPSHOT_NOT_AWAITED }]
         },
         {
             name: 'a promise in a function that returns something else',
