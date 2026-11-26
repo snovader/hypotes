@@ -23,6 +23,8 @@ interface RunOptions {
     readonly colors?: boolean;
     /** Runs only the tests marked only */
     readonly only?: boolean;
+    /** Maximum time to wait for the fixture process to exit */
+    readonly timeout?: number;
     /** Preloads hypotes/register, for module mocks */
     readonly register?: boolean;
     /**
@@ -55,7 +57,7 @@ const ESCAPE = '\u001B[';
  */
 async function resultsOf(
     file: string,
-    { colors, hook, only = false, register = false, sourceMaps = false }: RunOptions = {}
+    { colors, hook, only = false, register = false, sourceMaps = false, timeout }: RunOptions = {}
 ): Promise<Map<string, Result>> {
     const env = { ...process.env };
     // Which tells node:test that it runs in a test file's process
@@ -77,7 +79,7 @@ async function resultsOf(
     ];
     const flags = sourceMaps ? ['--enable-source-maps'] : [];
     const args = [...flags, ...preload, RESULTS, file, ...(only ? ['only'] : [])];
-    const { stdout } = await promisify(execFile)(process.execPath, args, { env });
+    const { stdout } = await promisify(execFile)(process.execPath, args, { env, timeout });
     const results = JSON.parse(stdout) as Result[];
 
     return new Map(results.map(result => [result.name, result]));
@@ -122,7 +124,7 @@ const [
     resultsOf(PREPENDED, { hook: `${PREPEND_LINES}?map=charset`, register: true }),
     resultsOf(PREPENDED, { hook: `${PREPEND_LINES}?map=code-after`, register: true }),
     resultsOf(PREPENDED, { hook: `${PREPEND_LINES}?map=sections`, register: true }),
-    resultsOf(RUNNING_TEST)
+    resultsOf(RUNNING_TEST, { timeout: 60_000 })
 ]);
 
 /** The start of the error that Vitest 4 throws for options after the function */
@@ -354,6 +356,11 @@ describe('what needs the test that is running', () => {
         'runs its callbacks after afterEach, the last first',
         'ran the callbacks in the order that Vitest runs them',
         'ran the callbacks after the one that threw',
+        'disables a callback timeout of 0',
+        'disables a callback timeout of -1',
+        'disables a callback timeout of Infinity',
+        'finished native teardown and ran its failure callback',
+        'preserves a read-only poll error and releases its retry timer',
         'ran the callbacks of a test whose beforeEach hook threw',
         'has the callbacks on its context, with expect',
         'has the callbacks on the context of row',
@@ -365,7 +372,7 @@ describe('what needs the test that is running', () => {
         'passes with an assertion when it expects some',
         'counts the assertions of its own, while another runs',
         'counts its own assertions too',
-        'counts the assertions of each run of a property',
+        'counts assertions across all runs of a property',
         'polls until the matcher passes',
         'polls with a negated matcher',
         'polls in real time, and moves fake timers forward',
@@ -384,6 +391,15 @@ describe('what needs the test that is running', () => {
         ['runs the callbacks of a failed test after the others', "expected 'test' to be 'passed'"],
         ['fails with the error of a callback, and runs the others', 'Error: the callback threw'],
         ['fails with a callback that times out', 'Hook timed out in 10ms.'],
+        ['fails when a synchronous callback exceeds its deadline', 'Hook timed out in 5ms.'],
+        [
+            'reports a soft failure from native teardown',
+            "expected 'native teardown' to be 'passing'"
+        ],
+        [
+            'reports native teardown failures after earlier callbacks ran',
+            "expected 'late teardown' to be 'passing'"
+        ],
         ['still runs the callbacks of the hook', 'Error: beforeEach threw'],
         [
             'has a context whose callbacks throw in a callback',

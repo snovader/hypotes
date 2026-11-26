@@ -43,29 +43,65 @@ export interface RecordedError {
     readonly stack?: string;
 }
 
+interface ExpectResult {
+    state: string;
+    errors?: RecordedError[];
+}
+
 /**
  * A test as @vitest/expect's assertions take it, with the fields of Vitest's
  * that they read and write: a soft assertion records its error in `result`,
  * a `.resolves` or a `.rejects` its promise in `promises`, and each its check
  * that it was awaited in `onFinished`.
  */
-export interface ExpectTask {
-    readonly type: 'test';
+export class ExpectTask {
+    readonly type = 'test';
     readonly name: string;
-    /** The names of its suites and its own, joined by ' > ' */
     readonly fullTestName: string;
-    result?: { state: string; errors?: RecordedError[] };
     promises?: Array<Promise<unknown>>;
-    onFinished?: TestCallback[];
     onFailed?: TestCallback[];
+
+    readonly #onPending: () => void;
+    #result: ExpectResult | undefined;
+    #onFinished: TestCallback[] | undefined;
+
+    constructor(context: TestContext, onPending: () => void) {
+        this.name = context.name;
+        this.fullTestName = context.fullName;
+        this.#onPending = onPending;
+    }
+
+    // @vitest/expect writes these fields directly, including from native
+    // t.after hooks that run after the test function has returned.
+    get result(): ExpectResult | undefined {
+        return this.#result;
+    }
+
+    set result(result) {
+        this.#result = result;
+        if (result != null) {
+            this.#onPending();
+        }
+    }
+
+    get onFinished(): TestCallback[] | undefined {
+        return this.#onFinished;
+    }
+
+    set onFinished(callbacks) {
+        this.#onFinished = callbacks;
+        if (callbacks != null) {
+            this.#onPending();
+        }
+    }
 }
 
 /** A test that node:test runs, and what its function has asked of its end */
 export class RunningTest {
     readonly #context: TestContext;
     readonly #task: ExpectTask;
-    /** Called as a callback of the test's end is added */
-    readonly #onCallback: () => void;
+    /** Schedules the test's remaining teardown work */
+    readonly #onPending: () => void;
 
     #assertionCalls = 0;
     #expectedAssertions: number | undefined;
@@ -75,17 +111,13 @@ export class RunningTest {
     #finishing = false;
 
     /**
-     * The test of node:test's context, which calls `onCallback` as a
-     * callback of its end is added, so that its end runs it
+     * The test of node:test's context, which schedules teardown when a
+     * callback is registered or a soft assertion records an error
      */
-    constructor(context: TestContext, onCallback: () => void) {
+    constructor(context: TestContext, onPending: () => void) {
         this.#context = context;
-        this.#onCallback = onCallback;
-        this.#task = {
-            type: 'test',
-            name: context.name,
-            fullTestName: context.fullName
-        };
+        this.#onPending = onPending;
+        this.#task = new ExpectTask(context, onPending);
     }
 
     /** node:test's context of the test */
@@ -145,12 +177,12 @@ export class RunningTest {
         }
     }
 
-    /** Marks the test as ended, as its callbacks start to run */
-    finish(): void {
-        this.#finishing = true;
+    /** Marks when the callbacks of the test are running */
+    setFinishing(finishing: boolean): void {
+        this.#finishing = finishing;
     }
 
-    /** Whether the test has ended, and its callbacks run */
+    /** Whether the callbacks of the test are running */
     isFinishing(): boolean {
         return this.#finishing;
     }
@@ -159,25 +191,13 @@ export class RunningTest {
     onFinished(callback: TestCallback): void {
         this.#task.onFinished ??= [];
         this.#task.onFinished.push(callback);
-        this.#onCallback();
     }
 
     /** Runs the callback once the test ends, if it failed */
     onFailed(callback: TestCallback): void {
         this.#task.onFailed ??= [];
         this.#task.onFailed.push(callback);
-        this.#onCallback();
-    }
-
-    /**
-     * Whether the test has callbacks for its end, which @vitest/expect adds
-     * itself too, for the `.resolves` and `.rejects` that aren't awaited
-     */
-    hasCallbacks(): boolean {
-        const finished = this.#task.onFinished?.length ?? 0;
-        const failed = this.#task.onFailed?.length ?? 0;
-
-        return finished + failed > 0;
+        this.#onPending();
     }
 
     /** The callbacks to run now that the test ended, last added first */

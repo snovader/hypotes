@@ -301,7 +301,8 @@ it, apart from the differences below.
 
 Property tests, declared with `it.prop()` as `@fast-check/vitest` declares
 them. It exports `it`, `test`, and fast-check's `fc`. A failure reports the
-shrunk counterexample, with the seed and path that replay it.
+shrunk counterexample, with the seed and path that replay it. Each property
+is one test. Its assertion count includes all runs of its predicate.
 
 It needs fast-check:
 
@@ -406,6 +407,9 @@ node:test runs the test, so these differ:
   its after hooks throw. So an error of an `onTestFinished` callback, or of a
   `.resolves` that wasn't awaited, isn't reported besides the test's own.
   Vitest reports each.
+- **Native subtests.** When a child declared with `t.test()` fails,
+  node:test propagates that failure to the parent after its teardown hooks.
+  A child failure alone therefore skips the parent's `onTestFailed` callbacks.
 - **What `fails` counts.** A test that `fails` passes if its function, a
   soft assertion, or its count of assertions failed it. Vitest passes it too
   when an `afterEach` hook or an `onTestFinished` callback throws, or when it
@@ -417,7 +421,8 @@ node:test runs the test, so these differ:
   a test uses the `expect` of its context.
 - **Timeouts of callbacks.** An `onTestFinished` or `onTestFailed` callback
   has a timeout only if it's given one, as its second argument. Vitest gives
-  each 10 seconds.
+  each 10 seconds. Zero, a negative timeout, or `Infinity` disables the
+  callback's deadline.
 
 ### Equality
 
@@ -752,7 +757,8 @@ The error is printed as node:test's reporters print it, with its stack.
 vitest rules see only what a file imports from `vitest`, so these take their
 place. They see the tests and suites declared through `hypotes`,
 `hypotes/fast-check` and `node:test`, the assertions of hypotes' `expect`,
-`expect.soft()` and `expect.poll()`, and hypotes' `vi`.
+`expect.soft()` and `expect.poll()`, and hypotes' `vi`. The assertion rules
+also recognize `expect` on a test's context.
 
 Load them in `.oxlintrc.json`, with the rules that you want:
 

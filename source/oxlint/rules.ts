@@ -87,6 +87,19 @@ const FACTORIES: ReadonlySet<string> = new Set([
  */
 const TABLE_FACTORIES: ReadonlySet<string> = new Set(['each', 'for']);
 
+/** Imported hooks whose callback receives the running test's context */
+const TEST_HOOKS: ReadonlySet<string> = new Set([
+    'beforeEach',
+    'afterEach',
+    'onTestFinished',
+    'onTestFailed'
+]);
+
+const CONTEXT_HOOKS: ReadonlySet<string> = new Set([
+    'onTestFinished',
+    'onTestFailed'
+]);
+
 /** Members between `expect()` and its matcher */
 const MODIFIERS: ReadonlySet<string> = new Set(['not', 'rejects', 'resolves']);
 
@@ -446,25 +459,109 @@ function hasCallback(call: CallExpression): boolean {
     return call.arguments.some(isFunctionExpression);
 }
 
-/** Whether a call starts an assertion: `expect()`, or a member that does */
-function isExpectCall(context: Context, call: CallExpression): boolean {
+/** The position of the test context in a hypotes callback's parameters */
+function contextIndex(
+    context: Context,
+    fn: FunctionExpression
+): number | undefined {
+    const call = fn.parent;
+    if (call.type !== 'CallExpression') {
+        return undefined;
+    }
+
+    const { callee } = call;
+    if (call.arguments[0] === fn && isNamedMember(callee, CONTEXT_HOOKS)) {
+        return callee.object.type === 'Identifier' &&
+            isContextBinding(context, callee.object)
+            ? 0
+            : undefined;
+    }
+
+    const members: StaticMemberExpression[] = [];
+    const target = declarerOf(callee, members);
+    const imported =
+        target.type === 'Identifier' ? importOf(context, target) : undefined;
+    if (imported == null || imported.source === 'node:test') {
+        return undefined;
+    }
+    if (
+        imported.source === 'hypotes' &&
+        TEST_HOOKS.has(imported.name) &&
+        call.arguments[0] === fn
+    ) {
+        return 0;
+    }
+    if (
+        roleOfImport(imported.source, imported.name) !== 'test' ||
+        functionOf(call) !== fn
+    ) {
+        return undefined;
+    }
+
+    // .each and .prop pass only row or generated values. .for also passes the context.
+    for (const member of members) {
+        switch (member.property.name) {
+            case 'each':
+            case 'prop':
+                return undefined;
+            case 'for':
+                return 1;
+        }
+    }
+    return 0;
+}
+
+/** Whether the parameter binds the test context, or its destructured expect */
+function isContextBinding(
+    context: Context,
+    id: Identifier,
+    member?: 'expect'
+): boolean {
+    const def = variableOf(context, id)?.defs[0];
+    if (def?.type !== 'Parameter' || !isFunctionExpression(def.node)) {
+        return false;
+    }
+
+    const index = contextIndex(context, def.node);
+    const parameter = index == null ? undefined : def.node.params[index];
+    if (member == null) {
+        return parameter === def.name;
+    }
+
+    return (
+        parameter?.type === 'ObjectPattern' &&
+        parameter.properties.some(
+            property =>
+                property.type === 'Property' &&
+                keyNameOf(property) === member &&
+                property.value === def.name
+        )
+    );
+}
+
+/** Whether a call starts an assertion, including named helpers for expect-expect */
+function isExpectCall(
+    context: Context,
+    call: CallExpression,
+    namedHelpers = false
+): boolean {
     const target = isNamedMember(call.callee, EXPECT_MEMBERS)
         ? call.callee.object
         : call.callee;
 
-    return target.type === 'Identifier' && roleOf(context, target) === 'expect';
-}
-
-/**
- * Whether a call's callee is named as an assertion, to expect-expect:
- * `expectOne()`, or `expect.soft()` or `expect.poll()`
- */
-function isNamedAssertion(callee: CallExpression['callee']): boolean {
-    const target = isNamedMember(callee, EXPECT_MEMBERS)
-        ? callee.object
-        : callee;
-
-    return target.type === 'Identifier' && target.name.startsWith('expect');
+    if (target.type === 'Identifier') {
+        return (
+            (namedHelpers && target.name.startsWith('expect')) ||
+            roleOf(context, target) === 'expect' ||
+            isContextBinding(context, target, 'expect')
+        );
+    }
+    return (
+        isStaticMember(target) &&
+        target.property.name === 'expect' &&
+        target.object.type === 'Identifier' &&
+        isContextBinding(context, target.object)
+    );
 }
 
 /** The chain that a call starts, if it calls `expect` */
@@ -538,7 +635,9 @@ function runsInTest(context: Context, call: CallExpression): boolean {
             }
         } else if (
             isFunction(ancestor) &&
-            ancestor.parent?.type !== 'CallExpression'
+            (ancestor.parent?.type !== 'CallExpression' ||
+                (isFunctionExpression(ancestor) &&
+                    contextIndex(context, ancestor) != null))
         ) {
             return true;
         }
@@ -1023,7 +1122,7 @@ export const expectExpect: Rule = {
 
         return {
             CallExpression(call): void {
-                if (isNamedAssertion(call.callee)) {
+                if (isExpectCall(context, call, true)) {
                     for (const ancestor of ancestorsOf(call)) {
                         if (ancestor.type === 'CallExpression') {
                             unasserted.delete(ancestor);

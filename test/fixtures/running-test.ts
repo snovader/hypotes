@@ -147,6 +147,20 @@ it('fails with a callback that times out', () => {
     expect(calls).toContain('finished after the callback that threw');
 });
 
+it.each([0, -1, Infinity])('disables a callback timeout of %s', timeout => {
+    onTestFinished(async () => {
+        await expect(delay(10)).resolves.toBeUndefined();
+    }, timeout);
+});
+
+it('fails when a synchronous callback exceeds its deadline', () => {
+    onTestFinished(() => {
+        // Block the event loop past the deadline so the timer cannot fire.
+        const value = new Int32Array(new SharedArrayBuffer(4));
+        expect(Atomics.wait(value, 0, 0, 20)).toBe('timed-out');
+    }, 5);
+});
+
 describe('a beforeEach hook that throws', () => {
     beforeEach(() => {
         onTestFailed(() => {
@@ -239,6 +253,31 @@ describe('a soft assertion in afterEach', () => {
     });
 });
 
+it('reports a soft failure from native teardown', t => {
+    t.after(() => {
+        expect.soft('native teardown').toBe('passing');
+        calls.push('continued native teardown');
+    });
+});
+
+it('reports native teardown failures after earlier callbacks ran', t => {
+    t.onTestFailed(() => {
+        calls.push('native teardown failed');
+    });
+    t.after(async () => {
+        await expect
+            .soft(Promise.resolve('late teardown'))
+            .resolves.toBe('passing');
+    });
+});
+
+it('finished native teardown and ran its failure callback', () => {
+    expect(calls.slice(-2)).toEqual([
+        'continued native teardown',
+        'native teardown failed'
+    ]);
+});
+
 it('runs onTestFailed for a soft assertion', () => {
     onTestFailed(() => {
         calls.push('failed, from a soft assertion');
@@ -314,7 +353,7 @@ describe('tests that run at once', { concurrency: true }, () => {
 });
 
 property.prop([fc.nat()], { numRuns: 3 })(
-    'counts the assertions of each run of a property',
+    'counts assertions across all runs of a property',
     count => {
         expect.assertions(3);
         expect(count).toBeGreaterThanOrEqual(0);
@@ -339,6 +378,30 @@ it('fails with the last error of a poll', async () => {
     await expect
         .poll(() => 1, { interval: 1, timeout: 20, message: 'the value' })
         .toBe(2);
+});
+
+it('preserves a read-only poll error and releases its retry timer', async () => {
+    const error = new DOMException('read failed', 'NetworkError');
+    // The fixture process must exit as soon as the poll times out.
+    const options = {
+        interval: 600_000,
+        timeout: 10,
+        message: 'waiting for a read'
+    };
+
+    let received: unknown;
+    try {
+        await expect
+            .poll(() => {
+                throw error;
+            }, options)
+            .toBe(1);
+    } catch (reason) {
+        received = reason;
+    }
+
+    expect(received).toBe(error);
+    expect(error.message).toBe('read failed');
 });
 
 it('fails with a poll that it did not await', () => {

@@ -20,6 +20,8 @@ tester.run('expect-expect', plugin.rules['expect-expect'], {
     valid: [
         imported("it('asserts', () => { expect(1).toBe(1); });"),
         imported("test('asserts', { skip: true }, () => { expect(1).toBe(1); });"),
+        imported("it('asserts on the context', t => { t.expect(1).toBe(1); });"),
+        imported("it.for([1])('asserts', (row, { expect: check }) => check.soft(row).toBe(1));"),
         imported("it('asserts through a helper', () => { expectOne(1); });"),
         imported(
             "it('asserts in a callback', () => { [1].forEach(value => { expect(value).toBe(1); }); });"
@@ -99,6 +101,11 @@ tester.run('expect-expect', plugin.rules['expect-expect'], {
         {
             name: "a test of node:test's",
             code: "import { it } from 'node:test';\nit('asserts nothing', () => {});",
+            errors: [{ message: NO_ASSERTION }]
+        },
+        {
+            name: "a row's own expect method",
+            code: imported("it.each(rows)('row', row => { row.expect(1); });"),
             errors: [{ message: NO_ASSERTION }]
         },
         {
@@ -213,6 +220,9 @@ tester.run('valid-expect', plugin.rules['valid-expect'], {
         imported('await expect.poll(() => value).toBe(1);'),
         imported('await expect.poll(() => value, { timeout: 10 }).not.toBe(1);'),
         imported('const check = (): Promise<void> => expect.poll(() => value).toBe(1);'),
+        imported("it('shadows the context', t => values.map(t => t.expect.poll(fn)));"),
+        imported("it.for(rows)('row', row => { row.expect.poll(fn); });"),
+        "import { it } from 'node:test'; it('native', t => t.expect(1));",
         // A member of `expect` that makes an asymmetric matcher, rather than an assertion
         imported('const any = expect.any(Number);')
     ],
@@ -250,6 +260,21 @@ tester.run('valid-expect', plugin.rules['valid-expect'], {
         {
             name: 'a soft assertion without a matcher',
             code: imported('expect.soft(1);'),
+            errors: [{ message: NO_MATCHER }]
+        },
+        {
+            name: 'an unawaited poll from a destructured context',
+            code: imported("it('polls', ({ expect }) => { expect.poll(fn).toBe(1); });"),
+            errors: [{ message: POLL_NOT_AWAITED }]
+        },
+        {
+            name: 'a context assertion without a matcher',
+            code: imported("it.for(rows)('row', (row, t) => { t.expect(row); });"),
+            errors: [{ message: NO_MATCHER }]
+        },
+        {
+            name: "a hook's destructured assertion",
+            code: "import { afterEach } from 'hypotes'; afterEach(({ expect: check }) => { check.soft(1); });",
             errors: [{ message: NO_MATCHER }]
         },
         {

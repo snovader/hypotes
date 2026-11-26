@@ -75,9 +75,6 @@ export function afterEach(fn: AfterHook<TestContext>, timeout?: number): void {
  * Calls a hook of each test with the test's context, which node:test types
  * as a suite's too, as the current test
  */
-function callEach<T>(
-    context: HookContext,
-    fn: (context: TestContext) => T
-): Promise<Awaited<T>> {
+function callEach<T>(context: HookContext, fn: (context: TestContext) => T): T {
     return callInTest(context as nodeTest.TestContext, fn);
 }

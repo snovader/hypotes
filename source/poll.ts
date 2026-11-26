@@ -6,7 +6,7 @@
 // As `vi.waitFor()`, it waits in real time, while the timers are fake too,
 // and then moves the fake clock forward by the interval.
 import { chai } from '@vitest/expect';
-import { delay, getSafeTimers } from '@vitest/utils/timers';
+import { getSafeTimers } from '@vitest/utils/timers';
 import type { FakeClock } from './timers.ts';
 
 type Awaitable<T> = PromiseLike<T> | T;
@@ -78,13 +78,18 @@ function timeoutError(
         return error;
     }
 
-    error.cause ??= new Error('Matcher did not succeed in time.');
-    // A matcher's error starts with the assertion's message already
-    if (message && !error.message.startsWith(`${message}: `)) {
-        error.message = `${message}: ${error.message}`;
+    try {
+        error.cause ??= new Error('Matcher did not succeed in time.');
+        // A matcher's message may already have the prefix. DOMException's
+        // getter-only message stays intact while its stack can still be set.
+        if (message && !error.message.startsWith(`${message}: `)) {
+            Reflect.set(error, 'message', `${message}: ${error.message}`);
+        }
+        return withStackOf(error, site);
+    } catch {
+        // Even a frozen error or a throwing setter must preserve the failure.
+        return error;
     }
-
-    return withStackOf(error, site);
 }
 
 /** Whether the promise settled, with its value, before the other did */
@@ -127,6 +132,7 @@ async function poll(poll: Poll): Promise<unknown> {
         timedOut.resolve();
     }, timeout);
 
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let lastError: unknown;
     try {
         while (!controller.signal.aborted) {
@@ -162,10 +168,9 @@ async function poll(poll: Poll): Promise<unknown> {
             } catch (error) {
                 lastError = error;
 
-                const waited = await raceWith(
-                    delay(interval, setTimeout),
-                    timedOut.promise
-                );
+                const retry = Promise.withResolvers<void>();
+                retryTimer = setTimeout(retry.resolve, interval);
+                const waited = await raceWith(retry.promise, timedOut.promise);
                 if (!waited.ok) {
                     break;
                 }
@@ -176,6 +181,7 @@ async function poll(poll: Poll): Promise<unknown> {
         }
     } finally {
         clearTimeout(timer);
+        clearTimeout(retryTimer);
     }
 
     throw lastError;

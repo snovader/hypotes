@@ -6,6 +6,7 @@
 // - A callback has a timeout only if it's given one. Vitest gives each its
 //   `hookTimeout`, of ten seconds, and aborts the test's signal once it
 //   passes.
+import { performance } from 'node:perf_hooks';
 import { assertTypes } from '@vitest/utils/helpers';
 import { getSafeTimers } from '@vitest/utils/timers';
 import {
@@ -13,6 +14,12 @@ import {
     type RunningTest,
     type TestCallback
 } from './current-test.ts';
+
+function timeoutError(timeout: number): Error {
+    return new Error(
+        `Hook timed out in ${timeout}ms.\nIf this is a long-running hook, pass a timeout value as the last argument.`
+    );
+}
 
 /**
  * The callback, which rejects once the timeout passes, in real time, while
@@ -22,23 +29,25 @@ function withTimeout(
     callback: TestCallback,
     timeout: number | undefined
 ): TestCallback {
-    if (timeout == null) {
+    if (timeout == null || timeout <= 0 || timeout === Infinity) {
         return callback;
     }
 
     return async context => {
         const { setTimeout, clearTimeout } = getSafeTimers();
         const timedOut = Promise.withResolvers<never>();
-        const timer = setTimeout(() => {
-            timedOut.reject(
-                new Error(
-                    `Hook timed out in ${timeout}ms.\nIf this is a long-running hook, pass a timeout value as the last argument.`
-                )
-            );
-        }, timeout);
+        const deadline = performance.now() + timeout;
+        const timer = setTimeout(
+            () => timedOut.reject(timeoutError(timeout)),
+            timeout
+        );
 
         try {
             await Promise.race([callback(context), timedOut.promise]);
+            // Synchronous work and microtasks can delay the timer itself.
+            if (performance.now() >= deadline) {
+                throw timeoutError(timeout);
+            }
         } finally {
             clearTimeout(timer);
         }

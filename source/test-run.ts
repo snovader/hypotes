@@ -8,9 +8,8 @@
 // node:test awaits the test's function, then runs the `afterEach` hooks, and
 // then the test's own `after` hooks, so the callbacks run in one of those,
 // where Vitest runs them: after the `afterEach` hooks. A test gets that hook
-// only once it needs it, which costs a test that doesn't nothing: once a
-// callback is added, or once its function or a hook of it leaves a callback
-// or a soft error that @vitest/expect added.
+// when a callback is registered or @vitest/expect records a soft failure.
+// node:test also runs after hooks appended during native teardown.
 //
 // Where it differs from Vitest:
 //
@@ -22,6 +21,8 @@
 //   the function, its soft assertions, and its counts of assertions. Vitest
 //   passes a test that `fails` when an `afterEach` hook or a callback of
 //   `onTestFinished` throws too, which fails it here.
+// - node:test propagates a failing native subtest to its parent after the
+//   parent's after hooks, too late to run onTestFailed for that failure.
 // - node:test drops what an `after` hook throws once the test has failed, so
 //   an error of a callback isn't reported besides the error of the test's
 //   function.
@@ -134,14 +135,10 @@ class TestRun {
     }
 
     /** Calls a function of the test, such as a hook, as the current test */
-    async call<T>(fn: (context: TestContext) => T): Promise<Awaited<T>> {
+    call<T>(fn: (context: TestContext) => T): T {
         const test = this.#test;
 
-        try {
-            return await runAs(test, () => fn(test.context()));
-        } finally {
-            this.#endIfPending();
-        }
+        return runAs(test, () => fn(test.context()));
     }
 
     /**
@@ -154,7 +151,6 @@ class TestRun {
         fails: boolean
     ): Promise<void> {
         const errors = await this.#errorsOf(fn);
-        this.#endIfPending();
 
         this.#failed = errors.length > 0;
         this.#threw = this.#failed !== fails;
@@ -176,7 +172,7 @@ class TestRun {
         const thrown: unknown[] = [];
 
         try {
-            await runAs(test, () => fn(test.context()));
+            await this.call(fn);
 
             thrown.push(...(await unawaitedErrors(test)));
             if (thrown.length === 0) {
@@ -193,17 +189,16 @@ class TestRun {
     #endLater(): void {
         if (!this.#ends) {
             this.#ends = true;
-            this.#context.after(() => this.#end());
-        }
-    }
-
-    /**
-     * Ends the test in an `after` hook if it has callbacks to run, or soft
-     * errors to fail with, which @vitest/expect may have added itself
-     */
-    #endIfPending(): void {
-        if (this.#test.hasCallbacks() || this.#test.hasErrors()) {
-            this.#endLater();
+            this.#context.after(async () => {
+                this.#test.setFinishing(true);
+                try {
+                    await this.#end();
+                } finally {
+                    this.#test.setFinishing(false);
+                    // A later native after hook can still record a failure.
+                    this.#ends = false;
+                }
+            });
         }
     }
 
@@ -214,8 +209,6 @@ class TestRun {
      */
     async #end(): Promise<void> {
         const test = this.#test;
-
-        test.finish();
         const errors = await callAll(test, test.takeFinished());
 
         // node:test has failed the test by now if a hook threw, or it timed out
@@ -260,7 +253,7 @@ function runOf(context: NodeTestContext): TestRun {
 export function callInTest<T>(
     context: NodeTestContext,
     fn: (context: TestContext) => T
-): Promise<Awaited<T>> {
+): T {
     return runOf(context).call(fn);
 }
 
