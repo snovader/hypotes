@@ -771,6 +771,10 @@ own code, outside `node_modules`. It must also be inside `GITHUB_WORKSPACE`,
 since GitHub can't place a file outside it on the diff. An error without
 such a line is annotated where its test was declared.
 
+Each error of an `AggregateError` has an annotation of its own, as in
+Vitest. A test with more than one error, such as two failed soft assertions,
+fails with one, as [The end of a test](#the-end-of-a-test) says.
+
 The reporter also appends the run's counts to the
 [job's summary](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#adding-a-job-summary),
 the file that `GITHUB_STEP_SUMMARY` names:
@@ -794,11 +798,6 @@ Where it differs from Vitest's:
 - **A file that fails as it loads.** node:test reports only that it failed,
   so its annotation is on the file's first line, and says `test failed`. The
   error is in the step's log.
-- **More than one error.** A test with more than one, such as two failed
-  soft assertions, fails with one `AggregateError`, as
-  [The end of a test](#the-end-of-a-test) says. So it has one annotation,
-  where the test was declared, and its message lists each error. Vitest
-  annotates each error at its own line.
 - **Expected failures.** node:test reports a test that `fails` as passed
   when it fails, so the summary counts it among the passes. Vitest's counts
   it as an expected failure.

@@ -18,6 +18,7 @@ const PASSES = join(PROJECTS, 'alpha', 'test', 'passes.spec.ts');
 const BROKEN = join(PROJECTS, 'beta', 'broken.ts');
 const HOOK = join(PROJECTS, 'beta', 'hook.ts');
 const THROUGH = join(PROJECTS, 'beta', 'through.ts');
+const ANNOTATIONS = join(PROJECTS, 'beta', 'annotations.ts');
 const ENTRY_FILE = fileURLToPath(new URL('fixtures/entry-file.ts', import.meta.url));
 /** A module of this package's, which mocks a module, and one of whose tests fails */
 const MOCKS = fileURLToPath(new URL('fixtures/mocks.ts', import.meta.url));
@@ -115,25 +116,35 @@ function totals(text: string): string[] {
     return text.split('\n').filter(line => /^ +(?:Test Files|Tests|Duration) {2}/.test(line));
 }
 
-const [plain, shared, colored, filtered, entryFile, annotated, annotatedMocks, notInActions] =
-    await Promise.all([
-        report([MIXED, DEEP, PASSES, BROKEN, HOOK, THROUGH]),
-        report([MIXED, PASSES], { isolation: 'none' }),
-        report([MIXED, PASSES], { colors: true }),
-        report([DEEP, PASSES], { namePattern: 'adds' }),
-        report([PASSES], { reporter: pathToFileURL(ENTRY_FILE).href }),
-        report([MIXED, PASSES, BROKEN, HOOK], {
-            colors: true,
-            github: { GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: SUMMARY }
-        }),
-        report([MOCKS], {
-            preload: import.meta.resolve('hypotes/register'),
-            github: { GITHUB_ACTIONS: 'true' }
-        }),
-        report([MIXED], {
-            github: { GITHUB_ACTIONS: 'false', GITHUB_STEP_SUMMARY: UNUSED_SUMMARY }
-        })
-    ]);
+const [
+    plain,
+    shared,
+    colored,
+    filtered,
+    entryFile,
+    annotated,
+    annotatedErrors,
+    annotatedMocks,
+    notInActions
+] = await Promise.all([
+    report([MIXED, DEEP, PASSES, BROKEN, HOOK, THROUGH]),
+    report([MIXED, PASSES], { isolation: 'none' }),
+    report([MIXED, PASSES], { colors: true }),
+    report([DEEP, PASSES], { namePattern: 'adds' }),
+    report([PASSES], { reporter: pathToFileURL(ENTRY_FILE).href }),
+    report([MIXED, PASSES, BROKEN, HOOK], {
+        colors: true,
+        github: { GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: SUMMARY }
+    }),
+    report([ANNOTATIONS], { colors: true, github: { GITHUB_ACTIONS: 'true' } }),
+    report([MOCKS], {
+        preload: import.meta.resolve('hypotes/register'),
+        github: { GITHUB_ACTIONS: 'true' }
+    }),
+    report([MIXED], {
+        github: { GITHUB_ACTIONS: 'false', GITHUB_STEP_SUMMARY: UNUSED_SUMMARY }
+    })
+]);
 
 /**
  * Whether this Node says which test file a test is from, as `entryFile`.
@@ -246,18 +257,37 @@ function commands(text: string): string[] {
     return text.split('\n').filter(line => line.startsWith('::'));
 }
 
-describe('a run in GitHub Actions', () => {
-    it('should preserve multiline messages and remove colours from assertion diffs', async () => {
-        const file = join(PROJECTS, 'beta', 'annotations.ts');
-        const output = await report([file], { colors: true, github: { GITHUB_ACTIONS: 'true' } });
-        const [multiline, diff] = commands(output);
+/** The line, the column and the message of each workflow command in a report */
+function placements(text: string): Array<string[] | undefined> {
+    return commands(text).map(command => /,line=(\d+),col=(\d+)::(.*)$/.exec(command)?.slice(1));
+}
 
-        expect(multiline).toContain(`::error file=${property(file)},`);
+describe('a run in GitHub Actions', () => {
+    it('should preserve multiline messages and remove colours from assertion diffs', () => {
+        const [multiline, diff] = commands(annotatedErrors);
+
+        expect(multiline).toContain(`::error file=${property(ANNOTATIONS)},`);
         expect(multiline).toContain(
             '::Error: Invalid input%0A    at least two values are required%0A    at /example.ts:1:2%0A ❯'
         );
         expect(diff).toContain('+ actual');
         expect(diff).not.toContain(ESCAPE);
+    });
+
+    it('should print the command of each error of an AggregateError, where it failed', () => {
+        const first = lineOf("new Error('the first failed')", ANNOTATIONS);
+        const second = lineOf("new TypeError('the second failed')", ANNOTATIONS);
+        const title = '[beta] annotations.ts > fails with more than one error';
+        const aggregated = commands(annotatedErrors).filter(command =>
+            command.includes(`title=${title},`)
+        );
+
+        expect(aggregated).toStrictEqual([
+            `::error file=${property(ANNOTATIONS)},title=${title},line=${first},col=19::` +
+                `Error: the first failed%0A ❯ annotations.ts:${first}:19`,
+            `::error file=${property(ANNOTATIONS)},title=${title},line=${second},col=20::` +
+                `TypeError: the second failed%0A ❯ annotations.ts:${second}:20`
+        ]);
     });
 
     it('should print the command of an error for each failure, where it failed', () => {
@@ -530,6 +560,54 @@ describe('events in GitHub Actions', () => {
             ]);
         }
     );
+
+    it.prop([fc.array(fc.integer({ min: 1, max: 10_000 }), { minLength: 1, maxLength: 5 })])(
+        'should print a command for each error of an AggregateError, in order, at its own line',
+        async lines => {
+            const url = pathToFileURL(LONE).href;
+            const path = relative(process.cwd(), LONE).replaceAll(sep, '/');
+            const errors = lines.map((line, index) =>
+                errorWithStack(`Error: error ${index}\n    at ${url}:${line}:2`)
+            );
+            const text = await print([
+                failure(LONE, 'fails', new AggregateError(errors, 'failed')),
+                END
+            ]);
+
+            expect(placements(text)).toStrictEqual(
+                lines.map((line, index) => [
+                    String(line),
+                    '2',
+                    `Error: error ${index}%0A ❯ ${path}:${line}:2`
+                ])
+            );
+        }
+    );
+
+    it('should unpack one level of an AggregateError, and print one without errors itself', async () => {
+        const nested = Object.assign(new AggregateError([new Error('inner')], 'nested'), {
+            stack: 'AggregateError: nested'
+        });
+        const empty = Object.assign(new AggregateError([], 'none'), {
+            stack: 'AggregateError: none'
+        });
+        const text = await print([
+            failure(
+                LONE,
+                'fails with nested errors',
+                new AggregateError([nested, 'a reason'], 'outer')
+            ),
+            failure(LONE, 'fails with no errors', empty),
+            END
+        ]);
+
+        // Each where its test was declared, since none has a frame
+        expect(placements(text)).toStrictEqual([
+            ['3', '5', 'AggregateError: nested'],
+            ['3', '5', 'a reason'],
+            ['3', '5', 'AggregateError: none']
+        ]);
+    });
 
     it('should print what a test threw that is no error', async () => {
         const text = await print([failure(LONE, 'fails', { reason: 'a\nb' }), END]);

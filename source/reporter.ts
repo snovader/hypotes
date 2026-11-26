@@ -28,7 +28,9 @@
 // `github-actions.ts` says. A failure is at the innermost frame of its
 // error's stack in the project's own code that GitHub can place on the diff,
 // as `github-actions.ts` picks it, or else where its test was declared,
-// which is where a file that failed to load starts.
+// which is where a file that failed to load starts. Each error of an
+// AggregateError gets a command of its own, as Vitest's runner records each,
+// so a test that hypotes fails with more than one error has one for each.
 import { relative, resolve, sep } from 'node:path';
 import process from 'node:process';
 import { spec, type TestEvent } from 'node:test/reporters';
@@ -185,6 +187,18 @@ function stackOf(cause: unknown): ParsedStack | undefined {
     return parseStack(stack, typeof message === 'string' ? message : undefined);
 }
 
+/**
+ * The errors that a failure is annotated with: those of an AggregateError,
+ * which Vitest's runner reports one by one, or else what it failed with.
+ * Vitest unpacks one level only, and reports nothing of an AggregateError
+ * without errors, which is annotated itself here.
+ */
+function errorsOf(cause: unknown): readonly unknown[] {
+    return cause instanceof AggregateError && cause.errors.length > 0
+        ? cause.errors
+        : [cause];
+}
+
 /** The path of a file from a directory, with `/` on each platform */
 function pathFrom(directory: string, file: string): string {
     return relative(directory, file).replaceAll(sep, '/');
@@ -336,26 +350,42 @@ class FileResults {
 
     /** Each of the file's failures, as GitHub Actions annotates it */
     annotations(github: GitHubActions): Annotation[] {
-        return this.#failures.map(failure => this.#annotate(failure, github));
+        return this.#failures.flatMap(failure =>
+            this.#annotate(failure, github)
+        );
     }
 
     /**
-     * A failure under the title that Vitest's reporter gives it, as
-     * `[project] file > suite > test`, with its error's name and message,
-     * and the frames of its stack in the project's own code, as Vitest
-     * prints an error. The job selects the frame it can annotate.
+     * A failure's annotations under the title that Vitest's reporter gives
+     * it, as `[project] file > suite > test`, one for each of its errors
      */
     #annotate(
-        { titles, error, cause, declared }: Failure,
+        { titles, cause, declared }: Failure,
         github: GitHubActions
-    ): Annotation {
+    ): Annotation[] {
         const name = [this.#path, ...titles].join(' > ');
         const title =
             this.#project == null ? name : `[${this.#project.name}] ${name}`;
 
-        const stack = stackOf(cause);
+        return errorsOf(cause).map(error =>
+            this.#annotation(error, title, declared, github)
+        );
+    }
+
+    /**
+     * An error's annotation under the title, with its name and message, and
+     * the frames of its stack in the project's own code, as Vitest prints an
+     * error. The job selects the frame it can annotate.
+     */
+    #annotation(
+        error: unknown,
+        title: string,
+        declared: Position,
+        github: GitHubActions
+    ): Annotation {
+        const stack = stackOf(error);
         if (stack == null) {
-            return { ...declared, title, message: error };
+            return { ...declared, title, message: formatError(error) };
         }
 
         const { head, frames } = stack;
