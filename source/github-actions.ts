@@ -8,6 +8,11 @@
 // - A command names its column as `col`, which is the property that
 //   GitHub's runner reads. Vitest writes `column`, which the runner
 //   ignores, so its annotations have a line only.
+// - A failure is at the innermost frame of its stack that is inside
+//   `GITHUB_WORKSPACE`, since the runner places a file outside it on no
+//   diff, or else where its test was declared. Vitest's is at the innermost
+//   frame in a file that Vite transformed, wherever it is, and it annotates
+//   no failure without one.
 // - The summary is titled `hypotes Test Report`, and has no flaky tests,
 //   nor tests expected to fail: node:test retries none, and has no
 //   `it.fails`.

@@ -152,14 +152,14 @@ intent, not a requirement to preserve every detail.
   have to pass, and it would count the files and track the titles again.
   node:test passes a reporter no options, so the variables that GitHub sets
   are the only switch; don't add one of hypotes' own without a need. A
-  failure's position is the innermost frame outside `node_modules` and
-  Node's internals and, when set, inside `GITHUB_WORKSPACE`. If no frame
-  qualifies, use the declaration. `stack.ts` reads the frames from the
-  stack's text: node:test passes the error from the test file's process,
-  where the positions are already those of the code as it's written, as
-  `stack.ts` says. The tests of the reporter and of the command run their
-  fixtures without GitHub's variables, so that CI's own job gets no
-  annotations or summary of failures that are on purpose.
+  failure's position is the innermost frame of its error's stack that the
+  runner can place on the diff, or else where its test was declared, as
+  `github-actions.ts` says. `stack.ts` reads the frames from the stack's
+  text: node:test passes the error from the test file's process, where the
+  positions are already those of the code as it's written, as `stack.ts`
+  says. The tests of the reporter and of the command run their fixtures
+  without GitHub's variables, so that CI's own job gets no annotations or
+  summary of failures that are on purpose.
 - The `hypotes` command, in `cli.ts`, is a launcher, not a runner: it starts
   `node --test` with the preload and the reporter, and passes its other
   arguments on, so it doesn't parse node:test's flags or keep a list of them. It

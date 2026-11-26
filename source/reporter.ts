@@ -25,8 +25,10 @@
 //
 // In a job of GitHub Actions, the failures follow the totals once more, each
 // as a workflow command, and the run's summary goes to the job's, as
-// `github-actions.ts` says. A failure is at the innermost project frame in
-// the GitHub workspace, or else where its test was declared.
+// `github-actions.ts` says. A failure is at the innermost frame of its
+// error's stack in the project's own code that GitHub can place on the diff,
+// as `github-actions.ts` picks it, or else where its test was declared,
+// which is where a file that failed to load starts.
 import { relative, resolve, sep } from 'node:path';
 import process from 'node:process';
 import { spec, type TestEvent } from 'node:test/reporters';

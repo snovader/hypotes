@@ -721,9 +721,10 @@ for each failure:
 ```
 
 GitHub shows the failure as an annotation on that line of the pull request's
-diff. The reporter uses the first stack frame inside `GITHUB_WORKSPACE`
-and outside `node_modules`. If no frame qualifies, it uses the line where
-the test was declared.
+diff. The line is the first in the error's stack that is in the project's
+own code, outside `node_modules`. It must also be inside `GITHUB_WORKSPACE`,
+since GitHub can't place a file outside it on the diff. An error without
+such a line is annotated where its test was declared.
 
 The reporter also appends the run's counts to the
 [job's summary](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#adding-a-job-summary),
@@ -742,6 +743,9 @@ Where it differs from Vitest's:
 
 - **The column.** The command names the column as `col`, which GitHub
   reads. Vitest 5.1 writes `column`.
+- **Where a failure is.** Vitest 5.1 annotates the first line of the stack
+  in a file that it transformed, even outside `GITHUB_WORKSPACE`. It doesn't
+  annotate an error without such a line.
 - **A file that fails as it loads.** node:test reports only that it failed,
   so its annotation is on the file's first line, and says `test failed`. The
   error is in the step's log.
