@@ -370,13 +370,28 @@ class FakeTimers {
     }
 }
 
+/** The fake clock, which `vi` sets, and a wait or a poll moves forward */
+const timers = new FakeTimers();
+
+/** The fake timers, for what moves them forward while they're in use */
+export interface FakeClock {
+    isFakeTimers(): boolean;
+    advanceTimersByTime(ms: number): unknown;
+}
+
+/** The fake timers of `vi`, for `expect.poll`, which isn't a member of it */
+export const fakeClock: FakeClock = {
+    isFakeTimers: () => timers.isFakeTimers(),
+    advanceTimersByTime: ms => {
+        timers.advanceTimersByTime(ms);
+    }
+};
+
 /**
  * The members of `vi` that fake timers, which return what `vi` returns, for
  * the calls that chain.
  */
 export function createTimersAPI<Vi>(vi: () => Vi): TimersAPI<Vi> {
-    const timers = new FakeTimers();
-
     return {
         useFakeTimers: chained(vi, config => timers.useFakeTimers(config)),
         useRealTimers: chained(vi, () => timers.useRealTimers()),

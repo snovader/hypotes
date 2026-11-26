@@ -15,6 +15,7 @@
 //   throws on its first call, and so moves the fake timers of later tests
 //   forward.
 import { getSafeTimers, setSafeTimers } from '@vitest/utils/timers';
+import type { FakeClock } from './timers.ts';
 
 /** How long `vi.waitFor()` and `vi.waitUntil()` wait, and what for */
 export interface WaitOptions {
@@ -60,12 +61,6 @@ export interface WaitAPI {
         callback: () => T | Promise<T>,
         options?: number | WaitOptions
     ): Promise<Truthy<T>>;
-}
-
-/** The fake timers, which a wait moves forward while they're in use */
-interface FakeClock {
-    isFakeTimers(): boolean;
-    advanceTimersByTime(ms: number): unknown;
 }
 
 /** What tells `vi.waitFor()` from `vi.waitUntil()` */

@@ -1,6 +1,6 @@
 // Vitest's API for tests, on Node's test runner: tests and suites, hooks,
-// Vitest's matchers, its spies, its module mocks, its fake timers, its stubs
-// of globals, and its waits
+// the callbacks of a test's end, Vitest's matchers, its spies, its module
+// mocks, its fake timers, its stubs of globals, and its waits
 import {
     clearAllMocks,
     fn,
@@ -35,6 +35,7 @@ export {
     type AfterHook,
     type Hook
 } from './hooks.ts';
+export { onTestFailed, onTestFinished } from './test-hooks.ts';
 export {
     describe,
     it,
@@ -52,7 +53,9 @@ export {
     type TestFunction,
     type TestOptions
 } from './tests.ts';
+export type { TestCallback } from './current-test.ts';
 export type { MockFactoryWithHelper } from './mocks.ts';
+export type { PollFunction, PollOptions } from './poll.ts';
 export type { FakeTimersConfig } from './timers.ts';
 export type { Mock, MockInstance } from '@vitest/spy';
 

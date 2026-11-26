@@ -36,6 +36,7 @@ interface RunOptions {
 
 const RESULTS = fileURLToPath(new URL('fixtures/results.ts', import.meta.url));
 const DECLARATIONS = fileURLToPath(new URL('fixtures/declarations.ts', import.meta.url));
+const RUNNING_TEST = fileURLToPath(new URL('fixtures/running-test.ts', import.meta.url));
 const ONLY = fileURLToPath(new URL('fixtures/only.ts', import.meta.url));
 const MOCKS = fileURLToPath(new URL('fixtures/mocks.ts', import.meta.url));
 const NESTED = fileURLToPath(new URL('fixtures/nested.ts', import.meta.url));
@@ -103,7 +104,8 @@ const [
     invalidMapResults,
     charsetMapResults,
     codeAfterMapResults,
-    sectionsMapResults
+    sectionsMapResults,
+    runningResults
 ] = await Promise.all([
     resultsOf(DECLARATIONS),
     resultsOf(ONLY, { only: true }),
@@ -119,7 +121,8 @@ const [
     resultsOf(PREPENDED, { hook: `${PREPEND_LINES}?map=invalid`, register: true }),
     resultsOf(PREPENDED, { hook: `${PREPEND_LINES}?map=charset`, register: true }),
     resultsOf(PREPENDED, { hook: `${PREPEND_LINES}?map=code-after`, register: true }),
-    resultsOf(PREPENDED, { hook: `${PREPEND_LINES}?map=sections`, register: true })
+    resultsOf(PREPENDED, { hook: `${PREPEND_LINES}?map=sections`, register: true }),
+    resultsOf(RUNNING_TEST)
 ]);
 
 /** The start of the error that Vitest 4 throws for options after the function */
@@ -335,5 +338,139 @@ describe("the messages of a spy's matchers", () => {
 
     it('should have colours where Node prints them, as to a terminal', () => {
         expect(coloredResults.get(TITLE)?.error).toContain(ESCAPE);
+    });
+});
+
+describe('what needs the test that is running', () => {
+    /** The result of the test of the title, which ran */
+    function runningResultOf(title: string): Result {
+        const result = runningResults.get(title);
+        expect(result, title).toBeDefined();
+        return result as Result;
+    }
+
+    it.each([
+        'throws outside a test, with Vitest messages',
+        'runs its callbacks after afterEach, the last first',
+        'ran the callbacks in the order that Vitest runs them',
+        'ran the callbacks after the one that threw',
+        'ran the callbacks of a test whose beforeEach hook threw',
+        'has the callbacks on its context, with expect',
+        'has the callbacks on the context of row',
+        'ran the callbacks of the context',
+        'went on after the soft assertions',
+        'passes with soft assertions that pass',
+        'ran onTestFailed for a soft assertion',
+        'passes with as many assertions as expected',
+        'passes with an assertion when it expects some',
+        'counts the assertions of its own, while another runs',
+        'counts its own assertions too',
+        'counts the assertions of each run of a property',
+        'polls until the matcher passes',
+        'polls with a negated matcher',
+        'polls in real time, and moves fake timers forward',
+        'fails passes a test that throws',
+        'fails passes a test with a soft failure',
+        'fails passes a test with fewer assertions than expected',
+        'fails as an option',
+        'fails.each 2',
+        'passes its test that throws',
+        'fails.prop passes a failed property'
+    ])('should pass "%s"', title => {
+        expect(runningResultOf(title)).toMatchObject({ passed: true, skipped: false });
+    });
+
+    it.each([
+        ['runs the callbacks of a failed test after the others', "expected 'test' to be 'passed'"],
+        ['fails with the error of a callback, and runs the others', 'Error: the callback threw'],
+        ['fails with a callback that times out', 'Hook timed out in 10ms.'],
+        ['still runs the callbacks of the hook', 'Error: beforeEach threw'],
+        [
+            'has a context whose callbacks throw in a callback',
+            'Cannot call "onTestFinished" inside a test hook.'
+        ],
+        ['fails with a soft assertion that a promise fails', 'expected 1 to be 2'],
+        ['fails the test', "expected 'afterEach' to be 'passing'"],
+        ['runs onTestFailed for a soft assertion', 'expected 1 to be 2'],
+        [
+            'fails with fewer assertions than expected',
+            'expected number of assertions to be 2, but got 1'
+        ],
+        [
+            'fails with no assertions when it expects some',
+            'expected any number of assertion, but got none'
+        ],
+        [
+            'fails with what it throws rather than its count of assertions',
+            'threw rather than counted'
+        ],
+        [
+            'fails with a promise that it did not await',
+            'Promise returned by `expect(actual).resolves.toBe(expected)` was not awaited.'
+        ],
+        ['fails with the last error of a poll', 'the value: expected 1 to be 2'],
+        [
+            'fails with a poll that it did not await',
+            'expect.poll(assertion).toBe() was not awaited.'
+        ],
+        ['fails fails a test that passes', 'Expect test to fail'],
+        ['fails.each 1', 'Expect test to fail'],
+        ['fails its test that passes', 'Expect test to fail']
+    ])('should fail "%s"', (title, message) => {
+        const result = runningResultOf(title);
+
+        expect(result.passed).toBe(false);
+        expect(result.error).toContain(message);
+    });
+
+    it('should fail with each error of the soft assertions, in its message', () => {
+        const { error } = runningResultOf(
+            'fails with each error of its soft assertions, and goes on'
+        );
+
+        expect(error).toContain('2 errors:');
+        expect(error).toContain('1. AssertionError: expected 1 to be 2');
+        expect(error).toContain(
+            '2. AssertionError: an object: expected { a: 1 } to deeply equal { a: 2 }'
+        );
+    });
+
+    it('should fail with a soft error and then what the test threw', () => {
+        const { error } = runningResultOf('fails with a soft assertion and what it throws after');
+
+        expect(error).toContain("1. AssertionError: expected 'soft' to be 'hard'");
+        expect(error).toContain('2. Error: threw after');
+    });
+
+    it('should fail with the errors of two callbacks, the last added first', () => {
+        const { error } = runningResultOf('fails with the errors of two callbacks');
+
+        expect(error).toContain('1. Error: the second callback threw');
+        expect(error).toContain('2. Error: the first callback threw');
+    });
+
+    it.each([
+        ['collects its own soft errors, while another runs', "'first'", "'second'"],
+        ['collects its own soft errors too', "'second'", "'first'"]
+    ])('should fail "%s" with its own soft error only', (title, own, other) => {
+        const { error } = runningResultOf(title);
+
+        expect(error).toContain(own);
+        expect(error).not.toContain(other);
+    });
+
+    it('should skip a test that fails and is skipped', () => {
+        expect(runningResultOf('skip.fails skips')).toMatchObject({ skipped: true });
+    });
+
+    it.each([
+        ['fails passes a test that throws', "it.fails('fails passes a test that throws'"],
+        ['fails.each 1', "test.fails.each([1, 2])('fails.each %i'"],
+        ['fails.prop passes a failed property', 'property.fails.prop([fc.nat()])(']
+    ])('should report "%s" where the test file declares it', (title, declaration) => {
+        expect(runningResultOf(title)).toMatchObject({
+            file: RUNNING_TEST,
+            line: lineOf(declaration, RUNNING_TEST)
+        });
     });
 });

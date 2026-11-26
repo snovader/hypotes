@@ -4,7 +4,12 @@
 // `--test-isolation=none`. node:test runs after hooks in the order that they
 // were declared, and the cleanup that a before hook returns runs as an after
 // hook declared with it, where Vitest runs them in the reverse order.
+//
+// A hook of each test runs with the test as the current one, so it can call
+// what a test's function can, such as `onTestFinished` and `expect.soft`.
 import * as nodeTest from 'node:test';
+import type { TestContext } from './current-test.ts';
+import { callInTest } from './test-run.ts';
 
 type Awaitable<T> = PromiseLike<T> | T;
 
@@ -44,32 +49,35 @@ export function afterAll(fn: AfterHook<HookContext>, timeout?: number): void {
 }
 
 /** Runs the hook before each of the suite's tests, and its cleanup after it */
-export function beforeEach(
-    fn: Hook<nodeTest.TestContext>,
-    timeout?: number
-): void {
-    const cleanups = new WeakMap<nodeTest.TestContext, unknown>();
+export function beforeEach(fn: Hook<TestContext>, timeout?: number): void {
+    const cleanups = new WeakMap<HookContext, unknown>();
 
     nodeTest.beforeEach(
         async context => {
-            const test = context as nodeTest.TestContext;
-            cleanups.set(test, await fn(test));
+            cleanups.set(context, await callEach(context, fn));
         },
         { timeout }
     );
     nodeTest.afterEach(
-        context => cleanUp(cleanups.get(context as nodeTest.TestContext)),
+        context => callEach(context, () => cleanUp(cleanups.get(context))),
         { timeout }
     );
 }
 
 /** Runs the hook after each of the suite's tests */
-export function afterEach(
-    fn: AfterHook<nodeTest.TestContext>,
-    timeout?: number
-): void {
-    nodeTest.afterEach(
-        async context => void (await fn(context as nodeTest.TestContext)),
-        { timeout }
-    );
+export function afterEach(fn: AfterHook<TestContext>, timeout?: number): void {
+    nodeTest.afterEach(async context => void (await callEach(context, fn)), {
+        timeout
+    });
+}
+
+/**
+ * Calls a hook of each test with the test's context, which node:test types
+ * as a suite's too, as the current test
+ */
+function callEach<T>(
+    context: HookContext,
+    fn: (context: TestContext) => T
+): Promise<Awaited<T>> {
+    return callInTest(context as nodeTest.TestContext, fn);
 }
