@@ -34,6 +34,7 @@ import {
     addSnapshotSerializer,
     type SnapshotSerializer
 } from './snapshot-session.ts';
+import { SnapshotPlugin } from './snapshot.ts';
 import { fakeClock } from './timers.ts';
 
 // @vitest/expect colours the messages of its spies' matchers with
@@ -49,6 +50,7 @@ if (styleText('red', 'text') === 'text') {
 
 chai.use(JestExtend);
 chai.use(JestChaiExpect);
+chai.use(SnapshotPlugin);
 chai.use(JestAsymmetricMatchers);
 
 /**
@@ -87,6 +89,11 @@ export interface Expect
     assertions: (expected: number) => void;
     /** Fails the test unless `expect()` is called by the end of its function */
     hasAssertions: () => void;
+    /**
+     * Adds a serializer, which the snapshots of the process try before
+     * those that they have
+     */
+    addSnapshotSerializer: (serializer: SnapshotSerializer) => void;
 }
 
 /** An assertion of chai's, with what @vitest/expect adds for Vitest's runner */
@@ -148,7 +155,8 @@ export const expect = Object.assign(
             assertionOf(actual, message).withContext({ soft: true }),
         poll: createPoll(assertionOf, fakeClock),
         assertions,
-        hasAssertions
+        hasAssertions,
+        addSnapshotSerializer
     }
 ) as unknown as Expect;
 

@@ -874,6 +874,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@vitest/snapshot@npm:^5.1.0":
+  version: 5.1.1
+  resolution: "@vitest/snapshot@npm:5.1.1"
+  dependencies:
+    "@vitest/pretty-format": "npm:5.1.1"
+    "@vitest/utils": "npm:5.1.1"
+    magic-string: "npm:^1.4.5"
+    pathe: "npm:^2.0.3"
+  checksum: 10c0/7b192d718b0e2eabc9992614943174d545b8a1ba2afe114b45e968fa821fdeb292a7dedb8c47183443ae5d72e8640624e811c6f71c7869820136fe1170305c1e
+  languageName: node
+  linkType: hard
+
 "@vitest/spy@npm:5.1.1, @vitest/spy@npm:^5.1.0":
   version: 5.1.1
   resolution: "@vitest/spy@npm:5.1.1"
@@ -931,6 +943,7 @@ __metadata:
     "@snovader/tsconfig": "npm:^0.1.0"
     "@types/node": "npm:^26.6.6"
     "@vitest/expect": "npm:^5.1.0"
+    "@vitest/snapshot": "npm:^5.1.0"
     "@vitest/spy": "npm:^5.1.0"
     "@vitest/utils": "npm:^5.1.0"
     fast-check: "npm:^4.10.2"
@@ -1219,6 +1232,13 @@ __metadata:
   bin:
     oxlint: bin/oxlint
   checksum: 10c0/73be499b923f1bb865a08b6fbb3c26a2df22ec8137f03d3689e3347f9e045b6bbbce7bfb74afe38e28736270090ba6c29fa4449f4c68898fab2c8fcf0972a073
+  languageName: node
+  linkType: hard
+
+"pathe@npm:^2.0.3":
+  version: 2.0.3
+  resolution: "pathe@npm:2.0.3"
+  checksum: 10c0/c118dc5a8b5c4166011b2b70608762e260085180bb9e33e80a50dcdb1e78c010b1624f4280c492c92b05fc276715a4c357d1f9edc570f8f1b3d90b6839ebaca1
   languageName: node
   linkType: hard
 

@@ -1,0 +1,36 @@
+// Tests whose values, names, and skips the environment sets, for runs that
+// follow a run whose snapshots were written
+import process from 'node:process';
+import { describe, expect, it } from 'hypotes';
+
+const value = process.env['SNAPSHOT_VALUE'] ?? 'first';
+const skips = Boolean(process.env['SNAPSHOT_SKIPS']);
+
+it('external', () => {
+    expect({ value, lines: 'one\ntwo' }).toMatchSnapshot();
+});
+
+it('inline', () => {
+    expect(value).toMatchInlineSnapshot();
+});
+
+it('file', async () => {
+    await expect(`${value}\n`).toMatchFileSnapshot('./golden/changes.txt');
+});
+
+it(process.env['SNAPSHOT_NAME'] ?? 'named', () => {
+    expect('named').toMatchSnapshot();
+});
+
+it.skipIf(skips)('skippable', () => {
+    expect('skippable').toMatchSnapshot();
+    expect('hinted').toMatchSnapshot('hint');
+});
+
+describe.skipIf(skips)('skippable suite', () => {
+    describe('inner', () => {
+        it('in a suite', () => {
+            expect('in a suite').toMatchSnapshot();
+        });
+    });
+});

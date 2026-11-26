@@ -78,6 +78,15 @@ export default defineConfig({
             }
         },
         {
+            // Fixtures of snapshots, which write an asymmetric matcher, typed
+            // any, among the properties that a value has to match, as test
+            // files may
+            files: ['test/fixtures/snapshots/**'],
+            rules: {
+                'typescript/no-unsafe-assignment': 'off'
+            }
+        },
+        {
             // Fixtures that call vi.mock() and vi.hoisted() where
             // hypotes/register rejects them, at the positions that the tests
             // check

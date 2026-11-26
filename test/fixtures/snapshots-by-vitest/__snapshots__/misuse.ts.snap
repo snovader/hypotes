@@ -1,0 +1,10 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`mismatch with message 4`] = `
+[
+  "Error: Snapshot \`mismatch with message 2\` mismatched",
+  "Error: custom message: Snapshot \`mismatch with message 3\` mismatched",
+]
+`;
+
+exports[`soft 2`] = `"goes on"`;

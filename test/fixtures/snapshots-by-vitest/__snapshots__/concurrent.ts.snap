@@ -1,0 +1,13 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`at once > fast 1`] = `"fast before"`;
+
+exports[`at once > fast 2`] = `"fast after"`;
+
+exports[`at once > middle > hint 1`] = `"middle before"`;
+
+exports[`at once > middle > hint 2`] = `"middle after"`;
+
+exports[`at once > slow 1`] = `"slow before"`;
+
+exports[`at once > slow 2`] = `"slow after"`;

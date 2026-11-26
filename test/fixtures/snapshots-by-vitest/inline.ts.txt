@@ -1,0 +1,124 @@
+import { describe, expect, it } from 'hypotes';
+
+interface Shape {
+    readonly kind: string;
+    readonly size: number;
+}
+
+type Pair<A, B> = [A, B];
+
+const shape = <T extends Shape>(value: T): T => value;
+
+it('scalars', () => {
+    expect(1).toMatchInlineSnapshot(`1`);
+    expect('text').toMatchInlineSnapshot(`"text"`);
+    expect('back`tick ${dollar} \\ slash').toMatchInlineSnapshot(`"back\`tick \${dollar} \\ slash"`);
+    expect('one\ntwo').toMatchInlineSnapshot(`
+      "one
+      two"
+    `);
+});
+
+it('objects', () => {
+    const pair: Pair<string, number> = ['a', 1];
+    expect(shape({ kind: 'square', size: 2 }) satisfies Shape).toMatchInlineSnapshot(`
+      {
+        "kind": "square",
+        "size": 2,
+      }
+    `);
+    expect(pair as readonly unknown[]).toMatchInlineSnapshot(`
+      [
+        "a",
+        1,
+      ]
+    `);
+    expect<Shape>({ kind: 'k', size: 1 }).toMatchInlineSnapshot(`
+      {
+        "kind": "k",
+        "size": 1,
+      }
+    `);
+});
+
+it('errors', async () => {
+    expect(() => {
+        throw new Error('thrown');
+    }).toThrowErrorMatchingInlineSnapshot(`[Error: thrown]`);
+    await expect(Promise.reject(new Error('rejected'))).rejects.toThrowErrorMatchingInlineSnapshot(`[Error: rejected]`);
+    await expect(Promise.resolve({ ok: true })).resolves.toMatchInlineSnapshot(`
+      {
+        "ok": true,
+      }
+    `);
+});
+
+it('property matchers', () => {
+    expect({ id: Math.random(), name: 'n' }).toMatchInlineSnapshot({ id: expect.any(Number) }, `
+      {
+        "id": Any<Number>,
+        "name": "n",
+      }
+    `);
+    expect({ id: Math.random(), name: 'm' }).toMatchInlineSnapshot(
+        { id: expect.any(Number) }, `
+      {
+        "id": Any<Number>,
+        "name": "m",
+      }
+    `);
+});
+
+describe('nested', () => {
+	it('tabs', () => {
+		expect({ a: [1, 2] }).toMatchInlineSnapshot(`
+			{
+			  "a": [
+			    1,
+			    2,
+			  ],
+			}
+		`);
+	});
+
+    it.each([1, 1])('same place %i', value => {
+        expect(value).toMatchInlineSnapshot(`1`);
+    });
+
+    it('in a callback', () => {
+        [1].forEach(value => {
+            expect({ value }).toMatchInlineSnapshot(`
+              {
+                "value": 1,
+              }
+            `);
+        });
+    });
+});
+
+it('kept', () => {
+    expect({ a: 1 }).toMatchInlineSnapshot(`
+      {
+        "a": 1,
+      }
+    `);
+    expect('kept').toMatchInlineSnapshot(`"kept"`);
+});
+
+it('two on a line', () => { expect(1).toMatchInlineSnapshot(`1`); expect(2).toMatchInlineSnapshot(`2`); });
+
+it('spread over lines', () => {
+    expect([1, 2, 3])
+        .toMatchInlineSnapshot(`
+          [
+            1,
+            2,
+            3,
+          ]
+        `);
+    expect(
+        'x'
+    ).toMatchInlineSnapshot(
+        // a comment
+    `"x"`);
+});

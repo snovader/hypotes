@@ -1,0 +1,5 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`values > with a snapshot too 1`] = `"in snap"`;
+
+exports[`values > with a snapshot too 3`] = `"in snap again"`;
