@@ -6,8 +6,9 @@
 // their variants, such as `it.only`, and of the functions that `it.each()`,
 // `it.for()`, `it.prop()`, `it.skipIf()` and `it.runIf()` return, and that
 // `it.each` and `it.for` return for a table in a template literal. An
-// assertion is a call of hypotes' `expect`, or, to expect-expect, of any
-// function whose name starts with `expect`, and `vi` is hypotes' `vi`.
+// assertion is a call of hypotes' `expect`, `expect.soft` or `expect.poll`,
+// or, to expect-expect, of any function whose name starts with `expect`, or
+// of its `soft` or `poll`, and `vi` is hypotes' `vi`.
 //
 // They find what oxlint's do, with these differences. TypeScript checks the
 // types of arguments, such as a title's, so the rules don't. They take no
@@ -60,7 +61,12 @@ interface Import {
 }
 
 /** Members of `it`, `test`, `describe` and `suite` that are called as they are */
-const VARIANTS: ReadonlySet<string> = new Set(['only', 'skip', 'todo']);
+const VARIANTS: ReadonlySet<string> = new Set([
+    'fails',
+    'only',
+    'skip',
+    'todo'
+]);
 
 /**
  * Members of `it`, `test`, `describe` and `suite` that return the function
@@ -81,11 +87,33 @@ const FACTORIES: ReadonlySet<string> = new Set([
  */
 const TABLE_FACTORIES: ReadonlySet<string> = new Set(['each', 'for']);
 
+/** Imported hooks whose callback receives the running test's context */
+const TEST_HOOKS: ReadonlySet<string> = new Set([
+    'beforeEach',
+    'afterEach',
+    'onTestFinished',
+    'onTestFailed'
+]);
+
+const CONTEXT_HOOKS: ReadonlySet<string> = new Set([
+    'onTestFinished',
+    'onTestFailed'
+]);
+
 /** Members between `expect()` and its matcher */
 const MODIFIERS: ReadonlySet<string> = new Set(['not', 'rejects', 'resolves']);
 
 /** Modifiers whose matchers return promises */
 const ASYNC_MODIFIERS: ReadonlySet<string> = new Set(['rejects', 'resolves']);
+
+/**
+ * Members of `expect` that start an assertion, as it does, such as
+ * `expect.soft(actual)`
+ */
+const EXPECT_MEMBERS: ReadonlySet<string> = new Set(['poll', 'soft']);
+
+/** Members of `expect` that start an assertion whose matchers return promises */
+const ASYNC_EXPECT_MEMBERS: ReadonlySet<string> = new Set(['poll']);
 
 /** Matchers of one value, for which others may say more */
 const EQUALITY_MATCHERS: ReadonlySet<string> = new Set([
@@ -127,9 +155,14 @@ const UNHOISTED: ReadonlyMap<string, string> = new Map([
 /** Files of TypeScript, where a call can take type arguments */
 const TYPESCRIPT = /\.[cm]?tsx?$/;
 
-/** An `expect()` call, the modifiers after it, such as `.not`, and its matcher */
+/**
+ * An `expect()` call, or `expect.soft()` or `expect.poll()`, the modifiers
+ * after it, such as `.not`, and its matcher
+ */
 interface ExpectChain {
     readonly expect: CallExpression;
+    /** `.poll`, if the chain starts with `expect.poll()` */
+    readonly poll: StaticMemberExpression | undefined;
     readonly modifiers: readonly StaticMemberExpression[];
     /** `.toBe`, if the chain names a matcher */
     readonly matcher: StaticMemberExpression | undefined;
@@ -426,10 +459,109 @@ function hasCallback(call: CallExpression): boolean {
     return call.arguments.some(isFunctionExpression);
 }
 
-function isExpectCall(context: Context, call: CallExpression): boolean {
+/** The position of the test context in a hypotes callback's parameters */
+function contextIndex(
+    context: Context,
+    fn: FunctionExpression
+): number | undefined {
+    const call = fn.parent;
+    if (call.type !== 'CallExpression') {
+        return undefined;
+    }
+
+    const { callee } = call;
+    if (call.arguments[0] === fn && isNamedMember(callee, CONTEXT_HOOKS)) {
+        return callee.object.type === 'Identifier' &&
+            isContextBinding(context, callee.object)
+            ? 0
+            : undefined;
+    }
+
+    const members: StaticMemberExpression[] = [];
+    const target = declarerOf(callee, members);
+    const imported =
+        target.type === 'Identifier' ? importOf(context, target) : undefined;
+    if (imported == null || imported.source === 'node:test') {
+        return undefined;
+    }
+    if (
+        imported.source === 'hypotes' &&
+        TEST_HOOKS.has(imported.name) &&
+        call.arguments[0] === fn
+    ) {
+        return 0;
+    }
+    if (
+        roleOfImport(imported.source, imported.name) !== 'test' ||
+        functionOf(call) !== fn
+    ) {
+        return undefined;
+    }
+
+    // `.each` and `.prop` pass only the values of a row or of a property, and
+    // `.for` passes the context after its row
+    for (const member of members) {
+        switch (member.property.name) {
+            case 'each':
+            case 'prop':
+                return undefined;
+            case 'for':
+                return 1;
+        }
+    }
+    return 0;
+}
+
+/** Whether the parameter binds the test context, or its destructured expect */
+function isContextBinding(
+    context: Context,
+    id: Identifier,
+    member?: 'expect'
+): boolean {
+    const def = variableOf(context, id)?.defs[0];
+    if (def?.type !== 'Parameter' || !isFunctionExpression(def.node)) {
+        return false;
+    }
+
+    const index = contextIndex(context, def.node);
+    const parameter = index == null ? undefined : def.node.params[index];
+    if (member == null) {
+        return parameter === def.name;
+    }
+
     return (
-        call.callee.type === 'Identifier' &&
-        roleOf(context, call.callee) === 'expect'
+        parameter?.type === 'ObjectPattern' &&
+        parameter.properties.some(
+            property =>
+                property.type === 'Property' &&
+                keyNameOf(property) === member &&
+                property.value === def.name
+        )
+    );
+}
+
+/** Whether a call starts an assertion, including named helpers for expect-expect */
+function isExpectCall(
+    context: Context,
+    call: CallExpression,
+    namedHelpers = false
+): boolean {
+    const target = isNamedMember(call.callee, EXPECT_MEMBERS)
+        ? call.callee.object
+        : call.callee;
+
+    if (target.type === 'Identifier') {
+        return (
+            (namedHelpers && target.name.startsWith('expect')) ||
+            roleOf(context, target) === 'expect' ||
+            isContextBinding(context, target, 'expect')
+        );
+    }
+    return (
+        isStaticMember(target) &&
+        target.property.name === 'expect' &&
+        target.object.type === 'Identifier' &&
+        isContextBinding(context, target.object)
     );
 }
 
@@ -457,8 +589,11 @@ function expectChainOf(
         parent?.type === 'CallExpression' && parent.callee === matcher
             ? parent
             : undefined;
+    const poll = isNamedMember(call.callee, ASYNC_EXPECT_MEMBERS)
+        ? call.callee
+        : undefined;
 
-    return { expect: call, modifiers, matcher, matcherCall };
+    return { expect: call, poll, modifiers, matcher, matcherCall };
 }
 
 /** The chain that a call starts, if it compares with toBe(), toEqual() or toStrictEqual() */
@@ -490,7 +625,8 @@ function hasModifier(chain: ExpectChain, names: ReadonlySet<string>): boolean {
 /**
  * Whether an expect() call runs in a test, or in a function of its own,
  * which a test may call. A function passed to a call, such as the callback
- * of `forEach()`, runs where the call runs.
+ * of `forEach()` or of a hook, runs where the call runs, as in
+ * eslint-plugin-vitest's rule.
  */
 function runsInTest(context: Context, call: CallExpression): boolean {
     for (const ancestor of ancestorsOf(call)) {
@@ -986,12 +1122,7 @@ export const expectExpect: Rule = {
 
         return {
             CallExpression(call): void {
-                const { callee } = call;
-                const isAssertion =
-                    callee.type === 'Identifier' &&
-                    callee.name.startsWith('expect');
-
-                if (isAssertion) {
+                if (isExpectCall(context, call, true)) {
                     for (const ancestor of ancestorsOf(call)) {
                         if (ancestor.type === 'CallExpression') {
                             unasserted.delete(ancestor);
@@ -1045,7 +1176,7 @@ export const validExpect: Rule = {
         type: 'problem',
         docs: {
             description:
-                'Requires a matcher to be called on expect(), and the promise of .resolves or .rejects to be awaited or returned. TypeScript checks the arguments of expect().'
+                'Requires a matcher to be called on expect(), and the promise of expect.poll(), .resolves or .rejects to be awaited or returned. TypeScript checks the arguments of expect().'
         }
     },
     create(context) {
@@ -1062,6 +1193,15 @@ export const validExpect: Rule = {
                         node: call,
                         message:
                             'Expected a matcher, such as toBe(), to be called on expect()'
+                    });
+                } else if (
+                    chain.poll != null &&
+                    !isAwaitedOrReturned(matcherCall)
+                ) {
+                    context.report({
+                        node: matcherCall,
+                        message:
+                            'Expected the promise of expect.poll() to be awaited or returned'
                     });
                 } else if (
                     hasModifier(chain, ASYNC_MODIFIERS) &&

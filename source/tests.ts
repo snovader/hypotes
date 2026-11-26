@@ -1,15 +1,22 @@
 // Tests and suites, declared through node:test with Vitest's API: `.each`
 // and `.for`, with rows in an array or a table in a template literal,
-// `.skipIf` and `.runIf`, and a timeout after the function.
+// `.skipIf` and `.runIf`, `.fails`, and a timeout after the function.
+import { AsyncLocalStorage } from 'node:async_hooks';
 import * as nodeTest from 'node:test';
 import { toArray } from '@vitest/utils/helpers';
+import type { TestContext } from './current-test.ts';
 import { callerSite, callFrom, type Site } from './site.ts';
 import { parseTable } from './table.ts';
+import { runTest } from './test-run.ts';
 import { formatTitle } from './title.ts';
+
+export type { TestContext };
 
 type Awaitable<T> = PromiseLike<T> | T;
 
-/** The options of a test or a suite, which node:test takes */
+/**
+ * The options of a test or a suite, which node:test takes, besides `fails`
+ */
 export interface TestOptions {
     /** Milliseconds after which the test fails */
     readonly timeout?: number;
@@ -27,9 +34,13 @@ export interface TestOptions {
     readonly only?: boolean;
     /** How many of its subtests run at once, or all at once if true */
     readonly concurrency?: boolean | number;
+    /**
+     * Passes the test if it fails, and fails it if it passes. A suite's is
+     * that of its tests, unless they have their own.
+     */
+    readonly fails?: boolean;
 }
 
-export type TestContext = nodeTest.TestContext;
 export type SuiteContext = nodeTest.SuiteContext;
 export type TestFunction = (context: TestContext) => Awaitable<unknown>;
 export type SuiteFunction = (context: SuiteContext) => Awaitable<unknown>;
@@ -102,6 +113,8 @@ export interface Modifiers<API> {
 /** `it` and `test`, with members that a subpath, such as fast-check's, adds */
 export interface TestAPI<Extra = unknown>
     extends Declare<TestFunction>, Modifiers<TestAPI<Extra> & Extra> {
+    /** Passes it if it fails, and fails it if it passes */
+    readonly fails: TestAPI<Extra> & Extra;
     readonly each: Each<Awaitable<unknown>>;
     readonly for: For<[context: TestContext]>;
 }
@@ -181,16 +194,23 @@ function optionsOf<Fn>(first: Argument<Fn>, second: Argument<Fn>): TestOptions {
     return typeof first === 'object' ? (first as TestOptions) : {};
 }
 
+/** What makes the API of `it` differ from the API of `describe` */
+interface Kind<Fn> {
+    /** Declares it through node:test */
+    readonly register: Register;
+    /** The options that each modifier besides the shared ones sets, by name */
+    readonly modifiers: Readonly<Record<string, TestOptions>>;
+    /** Adds members, such as `prop`, which declare with the same options */
+    readonly extend: (define: Define<Fn>) => object;
+}
+
 /**
  * The API of `it` or `describe`, of options that its modifiers set: each
- * modifier builds another, when it's read. `extend` adds members, such as
- * `prop`, which declare tests with the same options.
+ * modifier builds another, when it's read.
  */
-function createAPI<Fn>(
-    register: Register,
-    options: TestOptions,
-    extend: (define: Define<Fn>) => object
-): object {
+function createAPI<Fn>(kind: Kind<Fn>, options: TestOptions): object {
+    const { register, extend } = kind;
+
     const define: Define<Fn> = (name, ownOptions, fn, site) => {
         const merged = { ...options, ...ownOptions };
         // Vitest marks a test without a function as to do, where node:test
@@ -199,7 +219,7 @@ function createAPI<Fn>(
         register(name, { ...merged, ...todo }, fn as never, site);
     };
     const build = (more: TestOptions): object =>
-        createAPI(register, { ...options, ...more }, extend);
+        createAPI(kind, { ...options, ...more });
     const skipIf = (skip: boolean): object => build(skip ? { skip: true } : {});
 
     const declare = (
@@ -211,7 +231,15 @@ function createAPI<Fn>(
         define(name, parsed.options, parsed.fn, callerSite());
     };
 
+    const modifiers = Object.entries(kind.modifiers).map(
+        ([name, more]): [string, PropertyDescriptor] => [
+            name,
+            { get: () => build(more) }
+        ]
+    );
+
     return Object.defineProperties(Object.assign(declare, extend(define)), {
+        ...Object.fromEntries(modifiers),
         skip: { get: () => build({ skip: true }) },
         only: { get: () => build({ only: true }) },
         todo: { get: () => build({ todo: true }) },
@@ -302,38 +330,47 @@ function forEach<Fn>(
     };
 }
 
-/** Declares a test through node:test, which awaits it */
+/**
+ * Whether the tests that a suite's function declares fail, as the suite's
+ * options have it: node:test knows nothing of `fails`
+ */
+const suiteFails = new AsyncLocalStorage<boolean>();
+
+/**
+ * Declares a test through node:test, which awaits its run. The test `fails`
+ * as its run has it.
+ */
 function registerTest(
     name: string,
-    options: TestOptions,
+    { fails = suiteFails.getStore() ?? false, ...options }: TestOptions,
     fn: ((context: never) => unknown) | undefined,
     site: Site | undefined
 ): void {
     // node:test passes a callback as well to a function of two parameters
     const test =
-        fn && ((context: TestContext): unknown => fn(context as never));
-    void callFrom(
-        site,
-        nodeTest.it,
-        name,
-        options,
-        test as nodeTest.TestFn | undefined
-    );
+        fn &&
+        ((context: nodeTest.TestContext): Promise<void> =>
+            runTest(context, fn as TestFunction, fails));
+    void callFrom(site, nodeTest.it, name, options, test);
 }
 
 /** Declares a suite through node:test, which awaits it */
 function registerSuite(
     name: string,
-    options: TestOptions,
+    { fails = suiteFails.getStore() ?? false, ...options }: TestOptions,
     fn: ((context: never) => unknown) | undefined,
     site: Site | undefined
 ): void {
+    const suite =
+        fn &&
+        ((context: SuiteContext) =>
+            suiteFails.run(fails, () => (fn as SuiteFunction)(context)));
     void callFrom(
         site,
         nodeTest.describe,
         name,
         options,
-        fn as nodeTest.SuiteFn | undefined
+        suite as nodeTest.SuiteFn | undefined
     );
 }
 
@@ -344,7 +381,13 @@ function registerSuite(
 export function createTestAPI<Extra extends object>(
     extend: (define: Define<TestFunction>) => Extra
 ): TestAPI<Extra> & Extra {
-    return createAPI(registerTest, {}, extend) as TestAPI<Extra> & Extra;
+    const kind: Kind<TestFunction> = {
+        register: registerTest,
+        modifiers: { fails: { fails: true } },
+        extend
+    };
+
+    return createAPI(kind, {}) as TestAPI<Extra> & Extra;
 }
 
 /** Declares a test, which passes unless its function throws or rejects */
@@ -353,8 +396,7 @@ export const test: TestAPI = it;
 
 /** Declares a suite, whose function declares tests and other suites */
 export const describe = createAPI<SuiteFunction>(
-    registerSuite,
-    {},
-    () => ({})
+    { register: registerSuite, modifiers: {}, extend: () => ({}) },
+    {}
 ) as SuiteAPI;
 export const suite: SuiteAPI = describe;
