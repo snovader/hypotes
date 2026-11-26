@@ -157,6 +157,29 @@ it('greets the name in the file', () => {
 });
 ```
 
+Without a factory, `vi.mock()` mocks the module's exports by itself, as
+Vitest does. Functions become mocks that return `undefined`. Classes,
+objects and arrays are mocked deeply, as
+[Vitest's guide](https://vitest.dev/guide/mocking/modules) describes:
+
+```ts
+// test/greet-automock.test.ts
+import { readFileSync } from 'node:fs';
+import { expect, it, vi } from 'hypotes';
+import { greeting } from '../src/greet.ts';
+
+vi.mock('node:fs');
+
+it('greets the name that the mock returns', () => {
+    vi.mocked(readFileSync).mockReturnValue('Ada\n');
+
+    expect(greeting()).toBe('Hello, Ada!');
+});
+```
+
+With `vi.mock(path, { spy: true })`, the mocks keep their implementations,
+and record their calls.
+
 Module mocks differ from Vitest's in a few ways, which
 [Module mocks](#module-mocks) under the differences lists.
 
@@ -275,10 +298,10 @@ it, apart from the differences below.
 - `expect`, with Vitest's matchers and asymmetric matchers,
   `expect.extend()`, `expect.addEqualityTesters()` and `expect.fail()`.
 - `vi`, with these members:
-  - For spies: `fn`, `spyOn`, `mocked`, `isMockFunction`, `clearAllMocks`,
-    `resetAllMocks` and `restoreAllMocks`.
-  - For module mocks: `mock`, `unmock`, `doMock`, `doUnmock`, `hoisted` and
-    `importActual`.
+  - For spies: `fn`, `spyOn`, `mockObject`, `mocked`, `isMockFunction`,
+    `clearAllMocks`, `resetAllMocks` and `restoreAllMocks`.
+  - For module mocks: `mock`, `unmock`, `doMock`, `doUnmock`, `hoisted`,
+    `importActual` and `importMock`.
   - For fake timers: `useFakeTimers`, `useRealTimers`, `isFakeTimers`,
     `advanceTimersByTime`, `advanceTimersByTimeAsync`,
     `advanceTimersToNextTimer`, `advanceTimersToNextTimerAsync`,
@@ -354,7 +377,7 @@ in another form. Of `vi`, hypotes has only the members that
 | `expectTypeOf`, `assertType`                                                      | The `expect-type` package, which Vitest's `expectTypeOf` comes from           |
 | `assert`, `chai`, `should`                                                        | The `chai` package, which Vitest's come from                                  |
 | `vi.resetModules`                                                                 | None                                                                          |
-| `vi.importMock`, `vi.mockObject`, automocking, `__mocks__` directories            | A factory, as in `vi.mock(path, factory)`                                     |
+| `__mocks__` directories                                                           | A factory, as in `vi.mock(path, factory)`                                     |
 
 ## Differences from Vitest
 
@@ -431,6 +454,13 @@ that calls `vi.mock()`, as Vitest's transform does. It differs in these ways:
 - **Factories run early.** All of a module's mock factories run before its
   imports and dynamic imports, even for modules that are never imported.
   Vitest runs each as its mocked module loads.
+- **Originals load early.** A mock without a factory loads the original at
+  the same time, to mock its exports. So the original's top-level code runs
+  even if the mocked module is never imported.
+- **No cycles through a mock without a factory.** If the original imports a
+  module that imports the mocked module back, the import fails with an error
+  that says so. Vitest gives such a module the mock's exports as they're
+  made. Give the mock a factory instead.
 - **No `export * from`.** A module that calls `vi.mock()` can't
   `export * from` another module, which would load before the mocks. It can
   export by name, or with `export * as`.

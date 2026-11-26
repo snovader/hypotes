@@ -2,8 +2,11 @@ import { sep } from 'node:path';
 import { escape } from 'node:querystring';
 import { afterEach, describe, expect, it, vi } from 'hypotes';
 import { fc, it as property } from 'hypotes/fast-check';
+import { values as automockedValues, fetchValue } from './fixtures/automocked.ts';
 import data from './fixtures/data.json' with { type: 'json' };
 import * as partial from './fixtures/partial.ts';
+import type * as Shapes from './fixtures/shapes.ts';
+import { describeValue, replaced } from './fixtures/uses-automocked.ts';
 import { missing } from './fixtures/uses-package.ts';
 import { quadruple } from './fixtures/uses.ts';
 import original, * as values from './fixtures/values.ts';
@@ -20,6 +23,12 @@ vi.mock('querystring', () => ({ escape: (text: string) => `escaped ${text}` }));
 vi.mock('node:path', () => ({ sep: 'mocked' }));
 vi.unmock('path');
 vi.mock('not-installed-package', () => ({ missing: 'mocked' }));
+// A factory whose original imports a module that a later call automocks
+vi.mock(import('./fixtures/uses-automocked.ts'), async importOriginal => ({
+    ...(await importOriginal()),
+    replaced: () => 'mocked'
+}));
+vi.mock('./fixtures/automocked.ts');
 
 /** A name of a package, or a path within one */
 const word = fc.stringMatching(/^[a-z][a-z0-9-]{0,8}$/);
@@ -140,6 +149,7 @@ describe('vi.mock', () => {
 describe('vi.doMock', () => {
     afterEach(() => {
         vi.doUnmock('./fixtures/later.ts');
+        vi.doUnmock('./fixtures/uses-later.ts');
     });
 
     it('should mock the module for the dynamic imports after it, until disposed', async () => {
@@ -204,6 +214,16 @@ describe('vi.doMock', () => {
         const { value } = await import('./fixtures/later.ts');
 
         expect(value()).toBe('kept');
+    });
+
+    it('should wait in importOriginal for a mock that the original imports, whatever the order of the calls', async () => {
+        vi.doMock(import('./fixtures/uses-later.ts'), async importOriginal => ({
+            ...(await importOriginal())
+        }));
+        vi.doMock(import('./fixtures/later.ts'), () => Promise.resolve({ value: () => 'awaited' }));
+        const { describeLater } = await import('./fixtures/uses-later.ts');
+
+        expect(describeLater()).toBe('later: awaited');
     });
 
     property.prop([unresolved])(
@@ -292,9 +312,192 @@ describe('vi.doMock', () => {
             expect(() => doMock(path, () => ({}))).toThrow(TypeError);
         }
     );
+});
 
-    it('should throw without a factory, since hypotes mocks exports only from one', () => {
-        const doMock = vi.doMock as unknown as (path: string) => Disposable;
-        expect(() => doMock(import.meta.resolve('./fixtures/later.ts'))).toThrow('takes a factory');
+describe('vi.mock without a factory', () => {
+    afterEach(() => {
+        vi.doUnmock('./fixtures/shapes.ts');
+        vi.doUnmock('node:os');
+        vi.doUnmock('./fixtures/list.json');
+        vi.doUnmock('./fixtures/fails.ts');
+        vi.doUnmock('./fixtures/cycle.ts');
+        vi.doUnmock('./fixtures/later.ts');
+    });
+
+    it("should mock the original's exports, and give them to the modules that import it", () => {
+        vi.mocked(fetchValue).mockReturnValueOnce('mocked');
+
+        expect(vi.isMockFunction(fetchValue)).toBe(true);
+        expect([describeValue(), describeValue()]).toEqual(['value: mocked', 'value: undefined']);
+        expect(automockedValues).toEqual([]);
+    });
+
+    it('should load the original after the mocks that it imports, whatever the order of the calls', () => {
+        expect([replaced(), describeValue()]).toEqual(['mocked', 'value: undefined']);
+    });
+
+    it('should mock functions to return undefined, a default export and re-exports too', async () => {
+        vi.doMock('./fixtures/shapes.ts');
+        const shapes = await import('./fixtures/shapes.ts');
+
+        expect([shapes.add(1, 2), shapes.default('a'), shapes.reexported()]).toEqual([
+            undefined,
+            undefined,
+            undefined
+        ]);
+        expect(shapes.add).toHaveBeenCalledWith(1, 2);
+        expect(vi.isMockFunction(shapes.reexported)).toBe(true);
+    });
+
+    it('should keep primitives, empty arrays, and mock objects deeply', async () => {
+        vi.doMock('./fixtures/shapes.ts');
+        const shapes = await import('./fixtures/shapes.ts');
+        const actual = await vi.importActual<typeof Shapes>('./fixtures/shapes.ts');
+
+        expect([shapes.count, shapes.label, shapes.nothing]).toEqual([1, 'label', null]);
+        expect([shapes.list, shapes.settings.items]).toEqual([[], []]);
+        expect(shapes.settings.depth.value).toBe(1);
+        expect(shapes.settings.depth.read()).toBeUndefined();
+        expect(shapes.settings).not.toBe(actual.settings);
+        expect(actual.list).toEqual([1, 2]);
+    });
+
+    it('should mock a class, its methods, its static members and its getters', async () => {
+        vi.doMock('./fixtures/shapes.ts');
+        const { Counter } = await import('./fixtures/shapes.ts');
+        const counter = new Counter();
+
+        expect(counter).toBeInstanceOf(Counter);
+        expect([counter.value, counter.increment(), counter.doubled]).toEqual([
+            undefined,
+            undefined,
+            undefined
+        ]);
+        expect([Counter.start, Counter.create()]).toEqual([1, undefined]);
+        expect(vi.mocked(Counter).mock.instances).toEqual([counter]);
+        // oxlint-disable-next-line typescript/unbound-method -- The mock is read, not called
+        expect(Counter.prototype.increment).toHaveBeenCalledTimes(1);
+    });
+
+    it('should give vi.mocked() mocks whose implementations can be set', async () => {
+        vi.doMock('./fixtures/shapes.ts');
+        const { add, Counter } = await import('./fixtures/shapes.ts');
+        vi.mocked(add).mockReturnValue(10);
+        // oxlint-disable-next-line typescript/unbound-method -- The mock is read, not called
+        vi.mocked(Counter.prototype.increment).mockReturnValue(5);
+
+        expect([add(1, 2), new Counter().increment()]).toEqual([10, 5]);
+    });
+
+    it('should keep the implementations with spy, and record their calls', async () => {
+        vi.doMock('./fixtures/shapes.ts', { spy: true });
+        const shapes = await import('./fixtures/shapes.ts');
+        const counter = new shapes.Counter();
+
+        expect([shapes.add(1, 2), shapes.default('a'), shapes.reexported()]).toEqual([
+            3,
+            'hello a',
+            'hello'
+        ]);
+        expect([counter.increment(), counter.doubled, shapes.list]).toEqual([2, 4, [1, 2]]);
+        expect(shapes.add).toHaveBeenCalledWith(1, 2);
+        // oxlint-disable-next-line typescript/unbound-method -- The mock is read, not called
+        expect(counter.increment).toHaveBeenCalledTimes(1);
+    });
+
+    it('should automock with options that leave out spy, as Vitest does', async () => {
+        vi.doMock('./fixtures/shapes.ts', {});
+        const { add } = await import('./fixtures/shapes.ts');
+
+        expect(add(1, 2)).toBeUndefined();
+    });
+
+    it('should leave the original to vi.importActual', async () => {
+        vi.doMock('./fixtures/shapes.ts');
+        const actual = await vi.importActual<typeof Shapes>('./fixtures/shapes.ts');
+
+        expect(actual.add(1, 2)).toBe(3);
+        expect(vi.isMockFunction(actual.add)).toBe(false);
+    });
+
+    it('should mock a built-in module', async () => {
+        vi.doMock('node:os');
+        const os = await import('node:os');
+
+        expect(vi.isMockFunction(os.platform)).toBe(true);
+        expect([os.platform(), os.default.platform()]).toEqual([undefined, undefined]);
+        expect(os.EOL).toBe(os.default.EOL);
+    });
+
+    it('should mock JSON, whose original it imports with its type', async () => {
+        vi.doMock('./fixtures/list.json');
+        const list = await import('./fixtures/list.json', { with: { type: 'json' } });
+
+        expect(list.default).toEqual({ items: [], name: 'list' });
+    });
+
+    it("should reject the module's import with the original's error, if it fails to load", async () => {
+        vi.doMock('./fixtures/fails.ts');
+
+        await expect(import('./fixtures/fails.ts')).rejects.toThrow('fails.ts failed to load');
+    });
+
+    it('should reject a mock that a module that the original imports imports back', async () => {
+        vi.doMock('./fixtures/cycle.ts');
+
+        await expect(import('./fixtures/cycle.ts')).rejects.toThrow(
+            'was imported as its exports were made'
+        );
+    });
+
+    it("should reject an import that comes before the original's exports settle", async () => {
+        const { load } = await import('./fixtures/importer.ts');
+        vi.doMock('./fixtures/later.ts');
+
+        await expect(load()).rejects.toThrow("hadn't settled");
+    });
+});
+
+describe('vi.importMock', () => {
+    afterEach(() => {
+        vi.doUnmock('./fixtures/shapes.ts');
+    });
+
+    it("should import a module that isn't mocked, with its exports automocked", async () => {
+        const mocked = await vi.importMock<typeof Shapes>('./fixtures/shapes.ts');
+        const shapes = await import('./fixtures/shapes.ts');
+
+        expect(mocked.add(1, 2)).toBeUndefined();
+        expect(mocked.list).toEqual([]);
+        expect(shapes.add(1, 2)).toBe(3);
+    });
+
+    it('should mock the exports anew each time, as Vitest does', async () => {
+        const first = await vi.importMock<typeof Shapes>('./fixtures/shapes.ts');
+        const second = await vi.importMock<typeof Shapes>('./fixtures/shapes.ts');
+
+        expect(first.add).not.toBe(second.add);
+    });
+
+    it('should mock the exports as the mock of the module does, with spy', async () => {
+        vi.doMock('./fixtures/shapes.ts', { spy: true });
+        const mocked = await vi.importMock<typeof Shapes>('./fixtures/shapes.ts');
+        const shapes = await import('./fixtures/shapes.ts');
+
+        expect(mocked.add(1, 2)).toBe(3);
+        expect(vi.isMockFunction(mocked.add)).toBe(true);
+        expect(mocked.add).not.toBe(shapes.add);
+    });
+
+    it("should give the exports of a mock's factory", async () => {
+        const mocked = await vi.importMock<typeof values>('./fixtures/values.ts');
+
+        expect([mocked.default, mocked.one]).toEqual(['mocked', 2]);
+    });
+
+    it("should reject a package that isn't installed or mocked", async () => {
+        await expect(vi.importMock('not-installed-package/other')).rejects.toThrow(
+            "Cannot import the original of 'not-installed-package/other'"
+        );
     });
 });
