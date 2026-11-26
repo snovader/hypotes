@@ -13,17 +13,11 @@ export interface Site {
     readonly columnNumber: number;
 }
 
-/** node:test's `it` or `describe` */
-type Register<Options, Fn> = (
-    name: string,
-    options: Options,
-    fn: Fn
-) => unknown;
+/** A function of node:test's that declares, such as `it` or `after` */
+type Register<Args extends readonly unknown[]> = (...args: Args) => unknown;
 type Caller = (
-    register: Register<unknown, unknown>,
-    name: string,
-    options: unknown,
-    fn: unknown
+    register: Register<readonly unknown[]>,
+    args: readonly unknown[]
 ) => unknown;
 
 /** The functions compiled at each site, which each row of `.each` shares */
@@ -63,16 +57,17 @@ function isSamePosition(a: Site, b: Site): boolean {
     );
 }
 
-/** Calls `register` from code at the site, if there is one */
-export function callFrom<Options, Fn>(
+/**
+ * Calls `register`, which declares through node:test, from code at the
+ * site, if there is one
+ */
+export function callFrom<Args extends readonly unknown[]>(
     site: Site | undefined,
-    register: Register<Options, Fn>,
-    name: string,
-    options: Options,
-    fn: Fn
+    register: Register<Args>,
+    ...args: Args
 ): unknown {
     if (site == null) {
-        return register(name, options, fn);
+        return register(...args);
     }
 
     const key = `${site.scriptName}:${site.lineNumber}:${site.columnNumber}`;
@@ -82,7 +77,7 @@ export function callFrom<Options, Fn>(
         callers.set(key, caller);
     }
 
-    return caller(register as Register<unknown, unknown>, name, options, fn);
+    return caller(register as Register<readonly unknown[]>, args);
 }
 
 /** A function whose call to `register` lies at the site */
@@ -90,9 +85,9 @@ function compileCaller(site: Site): Caller {
     // The call starts the body's second line, which `lineOffset` puts at the
     // site's line, indented to its column
     const indent = ' '.repeat(site.columnNumber - 1);
-    const body = `return (\n${indent}register(name, options, fn));`;
+    const body = `return (\n${indent}register(...args));`;
 
-    return compileFunction(body, ['register', 'name', 'options', 'fn'], {
+    return compileFunction(body, ['register', 'args'], {
         filename: site.scriptName,
         lineOffset: site.lineNumber - 2
     }) as Caller;
