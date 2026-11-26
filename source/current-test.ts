@@ -60,6 +60,22 @@ export interface ExpectTask {
     onFailed?: TestCallback[];
 }
 
+/**
+ * An error of how a test is written, as Vitest's `TestSyntaxError`: it fails
+ * a test that `fails` too, which any other error passes
+ */
+export class TestSyntaxError extends Error {
+    override name = 'TestSyntaxError';
+}
+
+/**
+ * Whether the error is of how a test is written. A soft assertion's is a
+ * copy, which has the error's name.
+ */
+export function isTestSyntaxError(error: unknown): boolean {
+    return error instanceof Error && error.name === 'TestSyntaxError';
+}
+
 /** A test that node:test runs, and what its function has asked of its end */
 export class RunningTest {
     readonly #context: TestContext;
@@ -73,6 +89,8 @@ export class RunningTest {
     #withoutAssertions: Error | undefined;
     /** Whether the callbacks of the test's end are running */
     #finishing = false;
+    /** Whether the test passes if its function fails */
+    #fails = false;
 
     /**
      * The test of node:test's context, which calls `onCallback` as a
@@ -110,6 +128,16 @@ export class RunningTest {
     /** The test as @vitest/expect's assertions take it */
     task(): ExpectTask {
         return this.#task;
+    }
+
+    /** Has the test pass if its function fails, as its function starts */
+    expectFailure(): void {
+        this.#fails = true;
+    }
+
+    /** Whether the test `fails`, which its hooks before its function don't know */
+    expectsFailure(): boolean {
+        return this.#fails;
     }
 
     /** Counts a call of `expect()` */

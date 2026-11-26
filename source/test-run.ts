@@ -28,6 +28,7 @@
 import type { TestContext as NodeTestContext } from 'node:test';
 import { inspect } from 'node:util';
 import {
+    isTestSyntaxError,
     runAs,
     RunningTest,
     type RecordedError,
@@ -147,19 +148,27 @@ class TestRun {
     /**
      * Runs the test's function as Vitest's runner does. With `fails`, the
      * test passes if it failed, and fails if it didn't, with Vitest's
-     * message.
+     * message, or if it failed with a `TestSyntaxError`.
      */
     async run(
         fn: (context: TestContext) => Awaitable<unknown>,
         fails: boolean
     ): Promise<void> {
+        if (fails) {
+            this.#test.expectFailure();
+        }
         const errors = await this.#errorsOf(fn);
         this.#endIfPending();
 
         this.#failed = errors.length > 0;
-        this.#threw = this.#failed !== fails;
+        // As in Vitest, a test that `fails` fails with what is wrong with
+        // how it's written, such as a snapshot matcher in it
+        const misused = fails && errors.some(isTestSyntaxError);
+        this.#threw = misused || this.#failed !== fails;
         if (this.#threw) {
-            throw fails ? new Error('Expect test to fail') : failureOf(errors);
+            throw this.#failed
+                ? failureOf(errors)
+                : new Error('Expect test to fail');
         }
     }
 
