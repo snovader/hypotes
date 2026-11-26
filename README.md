@@ -421,8 +421,8 @@ node:test runs the test, so these differ:
   a test uses the `expect` of its context.
 - **Timeouts of callbacks.** An `onTestFinished` or `onTestFailed` callback
   has a timeout only if it's given one, as its second argument. Vitest gives
-  each 10 seconds. Zero, a negative timeout, or `Infinity` disables the
-  callback's deadline.
+  each 10 seconds. As in Vitest, zero, a negative timeout, or `Infinity`
+  disables the callback's deadline.
 
 ### Equality
 
@@ -803,7 +803,7 @@ Rules for assertions:
 | Rule                       | What it checks                                                                                            |
 | -------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `expect-expect`            | Each test calls `expect()`, its `soft()` or `poll()`, or a function whose name starts with `expect`.      |
-| `no-standalone-expect`     | `expect()` runs in a test or in a function, not in a suite or at the top of a module.                     |
+| `no-standalone-expect`     | `expect()` runs in a test or in a function, not in a suite, in a hook, or at the top of a module.         |
 | `valid-expect`             | A matcher is called on `expect()`, and `expect.poll()`, `.resolves` or `.rejects` is awaited or returned. |
 | `valid-expect-in-promise`  | A promise whose callback calls `expect()`, as in `.then()`, is awaited or returned.                       |
 | `require-to-throw-message` | `toThrow()` and `toThrowError()` say what the error should be, unless they follow `.not`.                 |

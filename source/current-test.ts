@@ -57,6 +57,7 @@ interface ExpectResult {
 export class ExpectTask {
     readonly type = 'test';
     readonly name: string;
+    /** The names of its suites and its own, joined by ' > ' */
     readonly fullTestName: string;
     promises?: Array<Promise<unknown>>;
     onFailed?: TestCallback[];

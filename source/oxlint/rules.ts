@@ -498,7 +498,8 @@ function contextIndex(
         return undefined;
     }
 
-    // .each and .prop pass only row or generated values. .for also passes the context.
+    // `.each` and `.prop` pass only the values of a row or of a property, and
+    // `.for` passes the context after its row
     for (const member of members) {
         switch (member.property.name) {
             case 'each':
@@ -624,7 +625,8 @@ function hasModifier(chain: ExpectChain, names: ReadonlySet<string>): boolean {
 /**
  * Whether an expect() call runs in a test, or in a function of its own,
  * which a test may call. A function passed to a call, such as the callback
- * of `forEach()`, runs where the call runs.
+ * of `forEach()` or of a hook, runs where the call runs, as in
+ * eslint-plugin-vitest's rule.
  */
 function runsInTest(context: Context, call: CallExpression): boolean {
     for (const ancestor of ancestorsOf(call)) {
@@ -635,9 +637,7 @@ function runsInTest(context: Context, call: CallExpression): boolean {
             }
         } else if (
             isFunction(ancestor) &&
-            (ancestor.parent?.type !== 'CallExpression' ||
-                (isFunctionExpression(ancestor) &&
-                    contextIndex(context, ancestor) != null))
+            ancestor.parent?.type !== 'CallExpression'
         ) {
             return true;
         }

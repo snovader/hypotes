@@ -126,6 +126,14 @@ tester.run('no-standalone-expect', plugin.rules['no-standalone-expect'], {
         imported("it.each([1])('asserts %i', value => { expect(value).toBe(1); });"),
         imported("it.for`a\n${1}`('asserts $a', ({ a }) => { expect(a).toBe(1); });"),
         imported("it.fails('fails', () => { expect.soft(1).toBe(2); });"),
+        imported("it('asserts on its context', t => { t.expect(1).toBe(1); });"),
+        imported(
+            "it.for([1])('asserts %i', (value, { expect: check }) => { check(value).toBe(1); });"
+        ),
+        imported(
+            "it('asserts at its end', t => { t.onTestFinished(context => { context.expect(1).toBe(1); }); });"
+        ),
+        "import { expect, it, onTestFinished } from 'hypotes';\nit('asserts at its end', () => { onTestFinished(() => { expect(1).toBe(1); }); });",
         imported(
             "test('asserts in a callback', () => { [1].forEach(value => { expect(value).toBe(1); }); });"
         ),
@@ -190,6 +198,32 @@ tester.run('no-standalone-expect', plugin.rules['no-standalone-expect'], {
             code: imported(
                 "describe.each`a\n${1}`('a block for $a', ({ a }) => { expect(a).toBe(1); });"
             ),
+            errors: [{ message: STANDALONE }]
+        },
+        // As in eslint-plugin-vitest, a hook's callback isn't in a test
+        {
+            name: 'an assertion in a beforeEach hook',
+            code: "import { beforeEach, expect } from 'hypotes';\nbeforeEach(() => { expect(1).toBe(1); });",
+            errors: [{ message: STANDALONE }]
+        },
+        {
+            name: 'an assertion in an afterEach hook of a describe block',
+            code: "import { afterEach, describe, expect } from 'hypotes';\ndescribe('a block', () => { afterEach(() => { expect(1).toBe(1); }); });",
+            errors: [{ message: STANDALONE }]
+        },
+        {
+            name: 'an assertion in a beforeAll hook of a describe block',
+            code: "import { beforeAll, describe, expect } from 'hypotes';\ndescribe('a block', () => { beforeAll(() => { expect(1).toBe(1); }); });",
+            errors: [{ message: STANDALONE }]
+        },
+        {
+            name: "an assertion on a hook's context",
+            code: "import { beforeEach } from 'hypotes';\nbeforeEach(({ expect }) => { expect(1).toBe(1); });",
+            errors: [{ message: STANDALONE }]
+        },
+        {
+            name: 'an assertion in a callback of onTestFinished at the top of the module',
+            code: "import { expect, onTestFinished } from 'hypotes';\nonTestFinished(() => { expect(1).toBe(1); });",
             errors: [{ message: STANDALONE }]
         }
     ]
