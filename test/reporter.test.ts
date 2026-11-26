@@ -561,18 +561,22 @@ describe('events in GitHub Actions', () => {
         }
     );
 
-    it.prop([fc.array(fc.integer({ min: 1, max: 10_000 }), { minLength: 1, maxLength: 5 })])(
+    it.prop([
+        fc.array(fc.integer({ min: 1, max: 10_000 }), { minLength: 1, maxLength: 5 }),
+        fc.boolean()
+    ])(
         'should print a command for each error of an AggregateError, in order, at its own line',
-        async lines => {
+        async (lines, withoutClass) => {
             const url = pathToFileURL(LONE).href;
             const path = relative(process.cwd(), LONE).replaceAll(sep, '/');
             const errors = lines.map((line, index) =>
                 errorWithStack(`Error: error ${index}\n    at ${url}:${line}:2`)
             );
-            const text = await print([
-                failure(LONE, 'fails', new AggregateError(errors, 'failed')),
-                END
-            ]);
+            // As Node 24 passes one that another process threw
+            const aggregate = withoutClass
+                ? Object.assign(new Error('failed'), { name: 'AggregateError', errors })
+                : new AggregateError(errors, 'failed');
+            const text = await print([failure(LONE, 'fails', aggregate), END]);
 
             expect(placements(text)).toStrictEqual(
                 lines.map((line, index) => [
@@ -591,6 +595,10 @@ describe('events in GitHub Actions', () => {
         const empty = Object.assign(new AggregateError([], 'none'), {
             stack: 'AggregateError: none'
         });
+        const named = Object.assign(new Error('named'), {
+            name: 'AggregateError',
+            stack: 'AggregateError: named'
+        });
         const text = await print([
             failure(
                 LONE,
@@ -598,6 +606,7 @@ describe('events in GitHub Actions', () => {
                 new AggregateError([nested, 'a reason'], 'outer')
             ),
             failure(LONE, 'fails with no errors', empty),
+            failure(LONE, 'fails with only the name', named),
             END
         ]);
 
@@ -605,7 +614,8 @@ describe('events in GitHub Actions', () => {
         expect(placements(text)).toStrictEqual([
             ['3', '5', 'AggregateError: nested'],
             ['3', '5', 'a reason'],
-            ['3', '5', 'AggregateError: none']
+            ['3', '5', 'AggregateError: none'],
+            ['3', '5', 'AggregateError: named']
         ]);
     });
 

@@ -188,15 +188,30 @@ function stackOf(cause: unknown): ParsedStack | undefined {
 }
 
 /**
+ * Whether a test failed with an AggregateError. Node 24 passes a reporter
+ * one from a test file's process as an Error, with the name and the errors
+ * but not the class, which Node 26 keeps.
+ */
+function isAggregateError(
+    cause: unknown
+): cause is Error & { readonly errors?: unknown } {
+    return (
+        cause instanceof AggregateError ||
+        (cause instanceof Error && cause.name === 'AggregateError')
+    );
+}
+
+/**
  * The errors that a failure is annotated with: those of an AggregateError,
  * which Vitest's runner reports one by one, or else what it failed with.
  * Vitest unpacks one level only, and reports nothing of an AggregateError
- * without errors, which is annotated itself here.
+ * without errors, which is annotated itself here, as is an Error that has
+ * only the name.
  */
 function errorsOf(cause: unknown): readonly unknown[] {
-    return cause instanceof AggregateError && cause.errors.length > 0
-        ? cause.errors
-        : [cause];
+    const errors = isAggregateError(cause) ? cause.errors : undefined;
+
+    return Array.isArray(errors) && errors.length > 0 ? errors : [cause];
 }
 
 /** The path of a file from a directory, with `/` on each platform */
