@@ -77,6 +77,42 @@ describe('parseStack', () => {
 
     it.prop([
         fc.array(
+            fc.oneof(
+                fc.string(),
+                fc.constantFrom(
+                    '    at least two',
+                    '    at /work/b.ts:1:2',
+                    '    at fn (/work/b.ts:3:4)'
+                )
+            ),
+            { minLength: 1 }
+        )
+    ])(
+        "should keep each line of the error's message in the head, even one that looks like a frame",
+        lines => {
+            const message = ['invalid input', ...lines].join('\n');
+            const stack = `Error: ${message}\n    at fn (/work/a.ts:5:6)`;
+
+            expect(parseStack(stack, message)).toStrictEqual({
+                // Without the white space that ends the message, as a head has none
+                head: `Error: ${message}`.trimEnd(),
+                frames: [{ file: '/work/a.ts', line: 5, column: 6 }]
+            });
+        }
+    );
+
+    it("should look for the frames from the stack's start where its head isn't the message", () => {
+        // As where the message changed after the stack was written
+        const stack = 'Error: failed\n    at fn (/work/a.ts:5:6)';
+
+        expect(parseStack(stack, 'failed\n    at fn (/work/b.ts:1:2)')).toStrictEqual({
+            head: 'Error: failed',
+            frames: [{ file: '/work/a.ts', line: 5, column: 6 }]
+        });
+    });
+
+    it.prop([
+        fc.array(
             fc.record({
                 file: fc.constantFrom('/work/a.ts', 'C:\\work\\a.ts', '/a b/c:d.ts'),
                 line: fc.integer({ min: 1, max: 1e6 }),

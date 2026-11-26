@@ -166,7 +166,6 @@ export class GitHubActions {
             const path = relative(workspace, file);
             // On Windows, a path on another drive stays absolute.
             return (
-                isAbsolute(file) &&
                 !isAbsolute(path) &&
                 path !== '..' &&
                 !path.startsWith(`..${sep}`)

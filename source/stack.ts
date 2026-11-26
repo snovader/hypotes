@@ -60,7 +60,7 @@ export function parseStack(stack: string, message?: string): ParsedStack {
 
 /** A multiline message can itself contain lines identical to V8 frames. */
 function framesStart(stack: string, message: string | undefined): number {
-    const firstFrame = /^[ \t]+at (?:.+:\d+:\d+|.+\)|<anonymous>)\r?$/gm;
+    const firstFrame = /^[ \t]+at (?:.+:\d+:\d+|.+\)|<anonymous>)$/gm;
     if (message?.includes('\n')) {
         const start = stack.indexOf(message);
         if (start >= 0 && start <= stack.indexOf('\n')) {
